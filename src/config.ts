@@ -8,8 +8,8 @@ const config = {
 
     /** Domain info config */
     domains: {
-        api: dev_mode ? 'http://localhost:3001' : '',
-        site: dev_mode ? 'http://localhost:3000' : '',
+        api: dev_mode ? 'http://localhost:3001' : 'https://api.avidapp.io',
+        site: dev_mode ? 'http://localhost:3000' : 'https://avidapp.io',
     },
     
 	/** Logger configuration */
@@ -32,13 +32,13 @@ const config = {
 	/** Database config */
 	db: {
 		/** Database url */
-		url: dev_mode ? 'http://127.0.0.1:8000/sql' : '',
+		url: dev_mode ? 'http://127.0.0.1:8000/sql' : 'https://db.avidapp.io',
 		/** Default namespace */
 		namespace: dev_mode ? 'test' : 'main',
 		/** Default databse */
 		database: dev_mode ? 'test' : 'main',
 		/** Default token */
-		token: 'main',
+		token: dev_mode ? 'main' : 'client',
 
         /** The default amount of time (in seconds) data retrieved from the database can be cached */
         cache_lifetime: 1 * 60,

@@ -2,10 +2,12 @@
   "name": "server",
   "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/server/src/server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx nodemon ./src/server.ts"
+    "dev": "npx nodemon ./src/server.ts",
+    "build": "shx rm -rf dist && tsc",
+    "start": "node dist/server/src/server.js"
   },
   "author": "",
   "license": "ISC",
@@ -15,6 +17,7 @@
     "@types/node": "^20.2.1",
     "@types/uuid": "^9.0.1",
     "nodemon": "^2.0.22",
+    "shx": "^0.3.4",
     "ts-node": "^10.9.1"
   },
   "dependencies": {

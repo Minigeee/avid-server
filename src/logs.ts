@@ -220,7 +220,7 @@ export class Logger {
 
         // Log file
         if (config.logger.log_file && !debug) {
-            const fname = config.dev_mode ? 'server.log' : `${new Date().toISOString().slice(0, 10)}.${process.pid}.log`;
+            const fname = config.dev_mode ? 'server.log' : `logs/${new Date().toISOString().slice(0, 10)}.${process.pid}.log`;
             appendFile(fname, JSON.stringify(denullify({ ...log, location: null })) + ',\n', (err) => {
                 if (err) {
                     this._logRemote({

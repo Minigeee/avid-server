@@ -10,6 +10,7 @@ const config = {
     domains: {
         api: dev_mode ? 'http://localhost:3001' : 'https://api.avidapp.io',
         site: dev_mode ? 'http://localhost:3000' : 'https://avidapp.io',
+        cors: dev_mode ? ['http://localhost:3000'] : ['https://avidapp.io', 'https://www.avidapp.io'],
     },
     
 	/** Logger configuration */
@@ -32,7 +33,7 @@ const config = {
 	/** Database config */
 	db: {
 		/** Database url */
-		url: dev_mode ? 'http://127.0.0.1:8000/sql' : 'https://db.avidapp.io',
+		url: dev_mode ? 'http://127.0.0.1:8000/sql' : 'https://db.avidapp.io/sql',
 		/** Default namespace */
 		namespace: dev_mode ? 'test' : 'main',
 		/** Default databse */

@@ -58,7 +58,7 @@ async function makeSocketServer() {
 	// Create socket.io server
 	_socketServer = new SocketServer(_httpServer, {
 		cors: {
-			origin: config.domains.site,
+			origin: config.domains.cors,
 			methods: ['GET', 'POST'],
 		}
 	});

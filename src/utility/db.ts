@@ -2,8 +2,15 @@ import assert from 'assert';
 
 import { Channel, Member } from '@app/types';
 
+import config from '@/config';
 import { query, sql } from './query';
-import { AsyncCache } from './utility/cache';
+import { AsyncCache } from './cache';
+
+import { Surreal } from 'surrealdb.js';
+
+
+/** Database connection */
+export const db = new Surreal(`${config.db.url}/rpc`);
 
 
 /** Caches */

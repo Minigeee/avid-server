@@ -2,30 +2,35 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { createServer as createHttpServer, IncomingMessage, Server as HttpServer } from 'http';
+import { createServer as createHttpServer, Server as HttpServer } from 'http';
 
-import express, { Express, Request, Response, NextFunction } from 'express';
-import { Server as SocketServer, Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
-
+import { AccessToken } from '@app/types';
 import config from './config';
-import { getDomainsOfUser } from './db';
-import { getJwtPublic } from './utility/keys';
-import wrapper from './utility/wrapper';
-import { log } from './logs';
-import { Client } from './types';
+import { Logger } from './logs';
+import { makeSocketServer } from './sockets';
+import { db } from '@/utility/db';
+import { createRoutes } from '@/utility/routes';
+import { getSessionUser } from './utility/auth';
+import { errorHandler, StatusError } from './utility/error';
 
-import { Media_ClientToServerEvents, Media_ServerToClientEvents } from '@app/types';
+import cors from 'cors';
+import express, { Express, Request, Response, NextFunction } from 'express';
 
-import { addChatHandlers } from './handlers/chat';
+
+////////////////////////////////////////////////////////////
+declare global {
+    namespace Express {
+        interface Request {
+			token: AccessToken;
+        }
+    }
+}
 
 
+/** HTTP server used to host both REST API and websockets connections */
 let _httpServer: HttpServer;
+/** Express app */
 let _expressApp: Express;
-let _socketServer: SocketServer<Media_ClientToServerEvents, Media_ServerToClientEvents>;
-
-/** A map of profile ids to client objects */
-const _clients: Record<string, Client> = {};
 
 
 ///////////////////////////////////////////////////////////
@@ -33,95 +38,83 @@ async function makeExpressServer() {
     _expressApp = express();
     _httpServer = createHttpServer(_expressApp);
 
-    // Launch express app
-    const port = process.env.PORT || 3001;
-    _httpServer.listen(port, () => console.log(`Realtime server running on port ${port}`));
-}
+
+	// Enable cors
+	_expressApp.use(cors({ credentials: true }));
+
+	// Parse json bodies
+	_expressApp.use(express.json({ limit: '5mb' }));
 
 
-///////////////////////////////////////////////////////////
-function getSessionUser(token?: string) {
-    if (!token) return;
+	// Authentication
+	_expressApp.use((req: Request, res: Response, next: NextFunction) => {
+		// Parse auth headers to get identity
+		const token = req.headers.authorization?.split(' ')?.[1];
+		const tokenObj = getSessionUser(token);
 
-    try {
-        const payload = jwt.verify(token, getJwtPublic());
-        return payload as { profile_id: string; };
-    }
-    catch (error) {
-        return;
-    }
-}
-
-
-///////////////////////////////////////////////////////////
-async function makeSocketServer() {
-	// Create socket.io server
-	_socketServer = new SocketServer(_httpServer, {
-		cors: {
-			origin: config.domains.cors,
-			methods: ['GET', 'POST'],
+		if (!tokenObj?.profile_id) {
+			next(new StatusError('not authenticated', { status: 401 }));
+		}
+		else {
+			req.token = tokenObj;
+			next();
 		}
 	});
 
-	// Handle client connect
-	_socketServer.on('connection', async (socket) => {
-        // Parse headers to get identity
-        const user = getSessionUser(socket.handshake.auth.token);
-        if (!user?.profile_id) {
-            log.warn('not authenticated');
-            socket.emit('error', 'not authenticated', 401);
-            socket.disconnect();
-            return;
-        }
-
-        // Get user info
-        const profile_id = user.profile_id;
-		const domains = await getDomainsOfUser(profile_id);
-
-		// Create client object
-		const client: Client = {
-			profile_id,
-			socket,
-			domains,
-
-			current_domain: '',
-		};
-		_clients[profile_id] = client;
-
-		// TODO : Performance optimization - only send messages to domain if the user is viewing it or there are no other unseen events in that domain
-		// Add client to all domain rooms
-		socket.join(Object.keys(domains));
-
-
-		// Called when the socket disconnects for any reason
-		socket.on('disconnect', wrapper.event((reason) => {
-			// Remove client from map
-			delete _clients[profile_id];
-
-			// Logging
-			log.info(`client disconnected`, { sender: profile_id });
-		}, { client }));
-
-		// Add message handlers
-		addChatHandlers(client);
-		
-
-		// Join logging
-		log.info(`new connection`, { sender: profile_id });
+	// Attach logger
+	_expressApp.use((req: Request, res: Response, next: NextFunction) => {
+		// Add logger
+		req.log = new Logger({ req });
+	
+		// Log to indicate that this route was requested
+		req.log.verbose('start');
+	
+		next();
 	});
-}
 
-///////////////////////////////////////////////////////////
-export function io() { return _socketServer; }
+	// Create routes
+	createRoutes(_expressApp, {
+		...require('./routes/boards').default,
+		...require('./routes/channel_groups').default,
+		...require('./routes/channels').default,
+		...require('./routes/domains').default,
+		...require('./routes/members').default,
+		...require('./routes/messages').default,
+		...require('./routes/permissions').default,
+		...require('./routes/roles').default,
+		...require('./routes/tasks').default,
+	});
+
+	// Error handler
+	_expressApp.use(errorHandler);
+
+
+    // Launch express app
+    const port = process.env.PORT || 3001;
+    _httpServer.listen(port, () => console.log(`Backend server running on port ${port}`));
+}
 
 
 ///////////////////////////////////////////////////////////
 async function main() {
+	// Sign in to db
+	// @ts-ignore
+	await db.signin({
+		user: config.db.username,
+		pass: config.db.password,
+		// @ts-ignore
+		NS: config.dev_mode ? undefined : config.db.namespace,
+	});
+	await db.use({
+		ns: config.db.namespace,
+		db: config.db.database,
+	});
+
     // Create express (and http) server
     await makeExpressServer();
 
     // Create socket.io server
-    await makeSocketServer();
+    await makeSocketServer(_httpServer);
 }
 
 

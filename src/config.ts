@@ -33,7 +33,7 @@ const config = {
 	/** Database config */
 	db: {
 		/** Database url */
-		url: dev_mode ? 'http://127.0.0.1:8000/sql' : 'https://db.avidapp.io/sql',
+		url: dev_mode ? 'http://127.0.0.1:8000' : 'https://db.avidapp.io',
 		/** Default namespace */
 		namespace: dev_mode ? 'test' : 'main',
 		/** Default databse */
@@ -41,8 +41,57 @@ const config = {
 		/** Default token */
 		token: dev_mode ? 'main' : 'client',
 
+		/** Main username */
+		username: dev_mode ? 'root' : process.env.SURREAL_USERNAME,
+		/** Main password */
+		password: dev_mode ? 'root' : process.env.SURREAL_PASSWORD,
+
         /** The default amount of time (in seconds) data retrieved from the database can be cached */
         cache_lifetime: 1 * 60,
+
+		/** Page sizes */
+		page_size: {
+			members: 100,
+			messages: 50,
+		},
+	},
+
+	/** App config */
+	app: {
+		/** Project board config */
+		board: {
+			/** Default tag color */
+			default_tag_color: '#495057',
+
+			/** Default statuses */
+			default_statuses: [
+				{ id: 'todo', label: 'To Do', color: '#868E96' },
+				{ id: 'in-progress', label: 'In Progress', color: '#228BE6' },
+				{ id: 'completed', label: 'Completed', color: '#40C057' },
+			],
+			/** Defualt status id */
+			default_status_id: 'todo',
+
+			/** Default backlog */
+			backlog_collection: {
+				id: 'backlog',
+				name: 'Backlog',
+				description: 'A backlog is typically used as a collection of tasks, features, or issues ' + 
+					'that have not yet been completed. The backlog can be used in many different ways, but ' +
+					'the most common way is to pull tasks from the backlog into a separate collection of tasks ' +
+					'that is worked on during the current period. This process can be started ' +
+					'by creating a new "objective" collection, define your team\'s current focus and priorities in its description, ' +
+					'then move any task that belongs within that objective into it.',
+			},
+			/** All collection */
+			all_collection: {
+				value: 'all',
+				id: 'all',
+				label: 'All',
+				name: 'All',
+				description: 'All tasks in this board',
+			},
+		},
 	},
 };
 

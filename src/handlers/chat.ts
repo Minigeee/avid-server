@@ -1,4 +1,4 @@
-import { getChannel } from '../db';
+import { getChannel } from '../utility/db';
 import { Client } from '../types';
 import wrapper from '../utility/wrapper';
 

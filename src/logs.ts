@@ -48,6 +48,7 @@ const CONSOLE_COLORS: Record<string, string> = {
     bgreen: '\x1b[1;32m',
     byellow: '\x1b[1;33m',
     bmagenta: '\x1b[1;35m',
+    bcyan: '\x1b[1;36m',
 };
 
 ////////////////////////////////////////////////////////////
@@ -64,6 +65,7 @@ const METHOD_COLORS: Record<string, string> = {
     GET: 'bblue',
     POST: 'bgreen',
     PUT: 'byellow',
+    PATCH: 'bcyan',
     DELETE: 'bred',
 };
 

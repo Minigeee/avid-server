@@ -82,6 +82,15 @@ export function asRecord(table: string, str: string) {
 
 
 ////////////////////////////////////////////////////////////
+export function asBool(str: string) {
+	str = str.toLowerCase();
+	if (str !== 'true' && str !== 'false')
+		throw new Error('must be either "true" or "false"');
+	return str === 'true';
+}
+
+
+////////////////////////////////////////////////////////////
 export function asInt(str: string, options?: IsNumberOpts) {
 	const valid = v.isInt(str, options);
 	if (!valid) {

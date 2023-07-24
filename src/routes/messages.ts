@@ -10,6 +10,8 @@ import { getClientSocketOrIo } from '@/sockets';
 import { getChannel } from '@/utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
 
+import { isNil, omitBy } from 'lodash';
+
 
 /** Finds all mentions in message */
 function findMentions(message: string) {
@@ -107,7 +109,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			// Map of members
 			const memberMap: Record<string, Member> = {};
 			for (const member of members)
-				memberMap[member.id] = { ...member, is_admin: member.is_admin || undefined };
+				memberMap[member.id] = omitBy({ ...member, is_admin: member.is_admin || undefined }, isNil) as ExpandedMember;
 
 			// Map of reactions lists
 			const reactionsMap: Record<string, (Reaction & { message: undefined })[]> = {};
@@ -200,10 +202,17 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 		// Only sender can edit their own message
 		permissions: (req) => sql.return(`${req.params.message_id}.sender == ${req.token.profile_id}`),
 		code: async (req, res) => {
+			// Analyze message for pings
+			const mentions = findMentions(req.body.message);
+
 			const results = await query<Message[]>(
 				sql.update<Message>(req.params.message_id, {
 					set: {
 						message: req.body.message,
+						mentions: mentions.members.size > 0 || mentions.roles.size > 0 ? {
+							members: Array.from(mentions.members),
+							roles: Array.from(mentions.roles),
+						} : undefined,
 						edited: true,
 					},
 					return: ['channel', 'message'],

@@ -5,7 +5,9 @@ import { ExpandedMember, Member } from '@app/types';
 import config from '@/config';
 import { hasMemberPermission, hasPermission, isMember, query, sql } from '@/utility/query';
 import { ApiRoutes } from '@/utility/routes';
-import { asArray, asInt, asRecord, isArray, isRecord } from '@/utility/validate';
+import { asArray, asBool, asInt, asRecord, isArray, isRecord } from '@/utility/validate';
+
+import { isNil, omitBy } from 'lodash';
 
 
 /** Fields that should be selected by member queries */
@@ -16,6 +18,7 @@ export const MEMBER_SELECT_FIELDS = [
 	'alias',
 	'roles',
 	'in.profile_picture AS profile_picture',
+	'in.online AS online',
 ];
 
 
@@ -61,6 +64,16 @@ const routes: ApiRoutes<`${string} /members${string}`> = {
 				location: 'query',
 				transform: (value) => asRecord('roles', value),
 			},
+			online: {
+				required: false,
+				location: 'query',
+				transform: (value) => asBool(value),
+			},
+			with_data: {
+				required: false,
+				location: 'query',
+				transform: (value) => asBool(value),
+			},
 		},
 		// User needs to be a member of the domain to view its members
 		permissions: (req) => sql.return(isMember(req.token.profile_id, req.query.domain)),
@@ -74,8 +87,8 @@ const routes: ApiRoutes<`${string} /members${string}`> = {
 					{ log: req.log }
 				);
 				assert(results);
-
-				return results;
+				
+				return results.map(x => omitBy(x, isNil)) as ExpandedMember[];
 			}
 			else {
 				// Match string
@@ -86,29 +99,46 @@ const routes: ApiRoutes<`${string} /members${string}`> = {
 					matchConstraints.push(`roles CONTAINS ${req.query.role}`);
 				else if (req.query.exclude_role)
 					matchConstraints.push(`roles CONTAINSNOT ${req.query.exclude_role}`);
+				if (req.query.online !== undefined)
+					matchConstraints.push(`in.online${req.query.online ? '=true' : '!=true'}`);
 				const matchStr = matchConstraints.join('&&');
 
 				// Limit
 				const limit = Math.min(req.query.limit || config.db.page_size.members, 1000);
 
-				// Create query string
-				const results = await query<[ExpandedMember[], { count: number }[]]>(sql.multi([
-					sql.select<Member>(MEMBER_SELECT_FIELDS, {
-						from: `${req.query.domain}<-member_of`,
-						where: matchStr || undefined,
-						limit: limit,
-						start: req.query.page !== undefined ? req.query.page * limit : undefined,
-						sort: [{ field: 'is_admin', order: 'DESC' }, { field: 'alias', mode: 'COLLATE' }],
-					}),
+				const ops: string[] = [];
+
+				// Query for actual data
+				const withData = req.query.with_data !== false;
+				if (withData) {
+					ops.push(
+						sql.select<Member>(MEMBER_SELECT_FIELDS, {
+							from: `${req.query.domain}<-member_of`,
+							where: matchStr || undefined,
+							limit: limit,
+							start: req.query.page !== undefined ? req.query.page * limit : undefined,
+							sort: [{ field: 'is_admin', order: 'DESC' }, { field: 'alias', mode: 'COLLATE' }],
+						})
+					);
+				}
+
+				// Query for count
+				ops.push(
 					sql.select<Member>(['count()'], {
 						from: `${req.query.domain}<-member_of`,
 						where: matchStr || undefined,
 						group: 'all',
-					}),
-				]), { complete: true, log: req.log });
+					})
+				);
+
+				// Create query string
+				const results = await query<any[]>(sql.multi(ops), { complete: true, log: req.log });
 				assert(results && results.length > 0);
 
-				return { data: results[0], count: results[1].length > 0 ? results[1][0].count : 0 };
+				return {
+					data: withData ? results[0].map((x: any) => omitBy(x, isNil)) : [],
+					count: results[results.length - 1].length > 0 ? results[results.length - 1][0].count : 0
+				};
 			}
 		},
 	},

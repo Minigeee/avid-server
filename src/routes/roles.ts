@@ -7,6 +7,8 @@ import { ApiRoutes } from '@/utility/routes';
 import { asRecord, isArray, isRecord } from '@/utility/validate';
 import { MEMBER_SELECT_FIELDS } from './members';
 
+import { isNil, omitBy } from 'lodash';
+
 
 const routes: ApiRoutes<`${string} /roles${string}`> = {
 	"GET /roles": {
@@ -229,7 +231,7 @@ const routes: ApiRoutes<`${string} /roles${string}`> = {
 			);
 			assert(results && results.length === req.body.members.length);
 
-			return results;
+			return results.map(x => omitBy(x, isNil)) as ExpandedMember[];
 		},
 	},
 

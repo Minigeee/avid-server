@@ -74,6 +74,7 @@ async function makeExpressServer() {
 
 	// Create routes
 	createRoutes(_expressApp, {
+		...require('./routes/app_state').default,
 		...require('./routes/boards').default,
 		...require('./routes/channel_groups').default,
 		...require('./routes/channels').default,

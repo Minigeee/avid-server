@@ -5,11 +5,12 @@ import { Server as SocketServer } from 'socket.io';
 import config from './config';
 import { getDomainsOfUser } from './utility/db';
 import { getSessionUser } from './utility/auth';
+import { query, sql } from './utility/query';
 import wrapper from './utility/wrapper';
 import { log } from './logs';
 import { Client } from './types';
 
-import { ClientToServerEvents, ServerToClientEvents } from '@app/types';
+import { ClientToServerEvents, Profile, ServerToClientEvents } from '@app/types';
 
 import { addChatHandlers } from './handlers/chat';
 
@@ -19,8 +20,6 @@ let _socketServer: SocketServer<ClientToServerEvents, ServerToClientEvents>;
 
 /** A map of profile ids to client objects */
 const _clients: Record<string, Client> = {};
-/** A map of domain ids to users that are online for that domain */
-const _online: Record<string, Set<string>> = {};
 
 
 ///////////////////////////////////////////////////////////
@@ -63,19 +62,9 @@ export async function makeSocketServer(server: HttpServer) {
 		socket.join(Object.keys(domains));
 
 
-		// Add user to all domains they are in, while making a list of online users
-		const online = new Set<string>();
-		for (const domain_id of Object.keys(domains)) {
-			if (!_online[domain_id])
-				_online[domain_id] = new Set<string>();
-			_online[domain_id].add(profile_id);
-
-			for (const pid of _online[domain_id])
-				online.add(pid);
-		}
-
-		// Notify that user successfully joined
-		socket.emit('joined', Array.from(online));
+		// Mark profile as online
+		console.log(sql.update<Profile>(profile_id, { set: { online: true } }))
+		query(sql.update<Profile>(profile_id, { set: { online: true } }));
 
 		// Notify in every domain the user is in that they joined
 		socket.to(Object.keys(domains)).emit('general:user-joined', profile_id);
@@ -83,17 +72,8 @@ export async function makeSocketServer(server: HttpServer) {
 
 		// Called when the socket disconnects for any reason
 		socket.on('disconnect', wrapper.event((reason) => {
-			// Remove user from online sets
-			for (const domain_id of Object.keys(domains)) {
-				if (!_online[domain_id]) continue;
-
-				// Remove from domain
-				_online[domain_id].delete(profile_id);
-
-				// Delete if no more online
-				if (_online[domain_id].size === 0)
-					delete _online[domain_id];
-			}
+			// Mark profile as offline
+			// TODO : query(sql.update<Profile>(profile_id, { set: { online: false } }));
 
 			// Notify in every domain the user is in that they left
 			socket.to(Object.keys(domains)).emit('general:user-left', profile_id);

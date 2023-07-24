@@ -1,14 +1,14 @@
 import assert from 'assert';
 
-import { AclEntry, AllPermissions, Board, Channel, ChannelGroup, ChannelOptions, ChannelTypes, Domain, ExpandedDomain, ExpandedMember, Member, Role, Task, TaskCollection, UserPermissions } from '@app/types';
+import { Board, ExpandedMember, Member, Task } from '@app/types';
 
 import config from '@/config';
-import { canModifyAcl, canViewAcl, getMember, hasMemberPermission, hasPermission, hasPermissionUsingMember, isMember, new_Record, query, sql } from '@/utility/query';
+import { hasPermission, query, sql } from '@/utility/query';
 import { ApiRoutes } from '@/utility/routes';
-import { asArray, asInt, asRecord, isArray, isIn, isRecord, sanitizeHtml } from '@/utility/validate';
+import { asRecord, isArray, isRecord, sanitizeHtml } from '@/utility/validate';
 import { MEMBER_SELECT_FIELDS } from './members';
 
-import { pick } from 'lodash';
+import { isNil, pick, omitBy } from 'lodash';
 
 
 /** Picks task fields from api object */
@@ -76,7 +76,7 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 			// Map of members
 			const memberMap: Record<string, ExpandedMember> = {};
 			for (const member of members)
-				memberMap[member.id] = { ...member, is_admin: member.is_admin || undefined };
+				memberMap[member.id] = omitBy({ ...member, is_admin: member.is_admin || undefined }, isNil) as ExpandedMember;
 
 			return {
 				tasks: tasks,
@@ -273,7 +273,7 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 
 			return {
 				...results[2],
-				assignee: results[2].assignee && results[1].length > 0 ? results[1][0] : undefined,
+				assignee: results[2].assignee && results[1].length > 0 ? omitBy(results[1][0], isNil) as ExpandedMember : undefined,
 			};
 		},
 	},

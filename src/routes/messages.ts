@@ -1,6 +1,6 @@
 import assert from 'assert';
 
-import { Channel, ExpandedMember, Member, Message, Reaction } from '@app/types';
+import { AggregatedReaction, Channel, ExpandedMember, Member, Message } from '@app/types';
 
 import config from '@/config';
 import { hasPermission, query, sql } from '@/utility/query';
@@ -75,7 +75,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			const limit = Math.min(req.query.limit || config.db.page_size.messages, 1000);
 
 			// Get messages and reactions
-			const results = await query<[unknown, unknown, (Reaction & { message: string })[], Member[], Message[]]>(sql.multi([
+			const results = await query<[unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Message[]]>(sql.multi([
 				// Get messages
 				sql.let('$messages', sql.select<Message>('*', {
 					from: 'messages',
@@ -87,7 +87,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				// Unique list of sender ids
 				sql.let('$senders', 'array::group([$messages.sender, array::flatten($messages.mentions.members)])'),
 				// List of reactions
-				sql.select(['emoji', 'count() AS count', 'out AS message'], {
+				sql.select(['emoji', 'count() AS count', `count(in == ${req.token.profile_id}) AS self`, 'out AS message'], {
 					from: 'reactions',
 					where: sql.match({ out: ['IN', sql.$('$messages.id')] }),
 					group: ['emoji', 'message'],
@@ -112,8 +112,8 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				memberMap[member.id] = omitBy({ ...member, is_admin: member.is_admin || undefined }, isNil) as ExpandedMember;
 
 			// Map of reactions lists
-			const reactionsMap: Record<string, (Reaction & { message: undefined })[]> = {};
-			for (const reaction of reactions) {
+			const reactionsMap: Record<string, (AggregatedReaction & { message: undefined })[]> = {};
+			for (const reaction of reactions.reverse()) {
 				if (!reactionsMap[reaction.message])
 					reactionsMap[reaction.message] = [];
 
@@ -241,7 +241,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			},
 		},
 		// Can delete message if it is sender's message, or if user has permission to delete messages
-		permissions: (req) => sql.return(`${req.params.message_id}.sender == ${req.token.profile_id} || ${hasPermission(req.token.profile_id, `${req.params.message_id}.channel`, 'can_delete_messages')}`),
+		permissions: (req) => sql.return(`${req.params.message_id}.sender == ${req.token.profile_id} || ${hasPermission(req.token.profile_id, `${req.params.message_id}.channel`, 'can_manage_messages')}`),
 		code: async (req, res) => {
 			const results = await query<Message[]>(
 				sql.delete(req.params.message_id, { return: 'BEFORE' }),

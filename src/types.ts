@@ -14,6 +14,8 @@ export type Client = {
 
     /** The current domain the user is viewing */
     current_domain: string;
+    /** The channel the user is currently viewing */
+    current_channel: string;
 };
 
 /** A type representing a log entry */

@@ -82,6 +82,7 @@ async function makeExpressServer() {
 		...require('./routes/members').default,
 		...require('./routes/messages').default,
 		...require('./routes/permissions').default,
+		...require('./routes/reactions').default,
 		...require('./routes/roles').default,
 		...require('./routes/tasks').default,
 	});

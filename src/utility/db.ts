@@ -31,29 +31,6 @@ const _caches = {
 
 
 /**
- * Get a map of domains the user belongs to, to a list of
- * roles assigned to the user within each domain.
- * 
- * @param profile_id The profile to retrieve domains for
- * @returns A map of domain ids to lists of role ids
- */
-export async function getDomainsOfUser(profile_id: string) {
-	// Get member info
-	const results = await query<(Member & { out: string })[]>(
-		sql.select<Member>(['out', 'roles'], { from: `${profile_id}->member_of` })
-	);
-	assert(results);
-
-	// Create map
-	const domains: Record<string, string[]> = {};
-	for (const member of results)
-		domains[member.out] = member.roles || [];
-
-	return domains;
-}
-
-
-/**
  * Get a channel object
  * 
  * @param channel_id The id of the channel to retrieve

@@ -2,11 +2,11 @@ import assert from 'assert';
 
 import { AclEntry, Member } from '@app/types';
 
-import { canModifyAcl, canViewAcl, getMember, isMember, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asRecord, isArray, isRecord } from '@/utility/validate';
+import { canModifyAcl, canViewAcl, getMember, isMember, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asRecord, isArray, isRecord } from '../utility/validate';
 
-import { StatusError } from '@/utility/error';
+import { StatusError } from '../utility/error';
 
 
 const routes: ApiRoutes<`${string} /permissions${string}`> = {

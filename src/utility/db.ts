@@ -2,7 +2,7 @@ import assert from 'assert';
 
 import { Channel, Member } from '@app/types';
 
-import config from '@/config';
+import config from '../config';
 import { query, sql } from './query';
 import { AsyncCache } from './cache';
 

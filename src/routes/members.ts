@@ -2,10 +2,10 @@ import assert from 'assert';
 
 import { ExpandedMember, Member } from '@app/types';
 
-import config from '@/config';
-import { hasMemberPermission, hasPermission, isMember, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asArray, asBool, asInt, asRecord, isArray, isRecord } from '@/utility/validate';
+import config from '../config';
+import { hasMemberPermission, hasPermission, isMember, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asArray, asBool, asInt, asRecord, isArray, isRecord } from '../utility/validate';
 
 import { isNil, omitBy } from 'lodash';
 

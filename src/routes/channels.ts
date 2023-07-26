@@ -2,10 +2,10 @@ import assert from 'assert';
 
 import { Board, Channel, ChannelGroup, ChannelOptions, ChannelTypes } from '@app/types';
 
-import config from '@/config';
-import { getMember, hasPermission, hasPermissionUsingMember, isMember, new_Record, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asRecord, isIn, isRecord } from '@/utility/validate';
+import config from '../config';
+import { getMember, hasPermission, hasPermissionUsingMember, isMember, new_Record, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asRecord, isIn, isRecord } from '../utility/validate';
 
 import { pick } from 'lodash';
 

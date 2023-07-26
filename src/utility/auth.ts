@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 
 import { AccessToken } from '@app/types';
-import { getJwtPublic } from '@/utility/keys';
+import { getJwtPublic } from './keys';
 
 
 ///////////////////////////////////////////////////////////

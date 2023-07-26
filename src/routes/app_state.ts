@@ -1,5 +1,5 @@
-import { query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
+import { query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
 
 import { omit } from 'lodash';
 

@@ -2,9 +2,9 @@ import assert from 'assert';
 
 import { Domain, ExpandedMember, Member, Role } from '@app/types';
 
-import { hasMemberPermission, hasPermission, isMember, new_Record, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asRecord, isArray, isRecord } from '@/utility/validate';
+import { hasMemberPermission, hasPermission, isMember, new_Record, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asRecord, isArray, isRecord } from '../utility/validate';
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, omitBy } from 'lodash';

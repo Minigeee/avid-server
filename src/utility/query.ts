@@ -1,8 +1,8 @@
 import assert from 'assert';
 
-import config from '@/config';
+import config from '../config';
 import { AllPermissions } from '@app/types';
-import { Logger, log } from '@/logs';
+import { Logger, log } from '../logs';
 import { db } from './db';
 
 

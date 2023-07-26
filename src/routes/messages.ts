@@ -2,12 +2,12 @@ import assert from 'assert';
 
 import { AggregatedReaction, Channel, ExpandedMember, Member, Message } from '@app/types';
 
-import config from '@/config';
-import { hasPermission, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asInt, asRecord, isRecord, sanitizeHtml } from '@/utility/validate';
-import { getClientSocketOrIo } from '@/sockets';
-import { getChannel } from '@/utility/db';
+import config from '../config';
+import { hasPermission, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asInt, asRecord, isRecord, sanitizeHtml } from '../utility/validate';
+import { getClientSocketOrIo } from '../sockets';
+import { getChannel } from '../utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, omitBy } from 'lodash';

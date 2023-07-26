@@ -2,9 +2,9 @@ import assert from 'assert';
 
 import { Board, Task, TaskCollection } from '@app/types';
 
-import { hasPermission, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import {  asRecord, isArray, sanitizeHtml } from '@/utility/validate';
+import { hasPermission, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import {  asRecord, isArray, sanitizeHtml } from '../utility/validate';
 
 import { pick } from 'lodash';
 

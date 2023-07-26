@@ -1,12 +1,12 @@
 import assert from 'assert';
 
 import { Reaction } from '@app/types';
-import { emitBatchEvent } from '@/utility/batcher';
-import { hasPermission, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asRecord, isRecord } from '@/utility/validate';
-import { getChannel } from '@/utility/db';
-import { io } from '@/sockets';
+import { emitBatchEvent } from '../utility/batcher';
+import { hasPermission, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asRecord, isRecord } from '../utility/validate';
+import { getChannel } from '../utility/db';
+import { io } from '../sockets';
 
 
 const routes: ApiRoutes<`${string} /reactions${string}`> = {

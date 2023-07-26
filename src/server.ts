@@ -8,8 +8,8 @@ import { AccessToken } from '@app/types';
 import config from './config';
 import { Logger } from './logs';
 import { makeSocketServer } from './sockets';
-import { db } from '@/utility/db';
-import { createRoutes } from '@/utility/routes';
+import { db } from './utility/db';
+import { createRoutes } from './utility/routes';
 import { getSessionUser } from './utility/auth';
 import { errorHandler, StatusError } from './utility/error';
 

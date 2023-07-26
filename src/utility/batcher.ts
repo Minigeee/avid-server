@@ -1,6 +1,6 @@
-import { io } from "@/sockets";
-import { ServerToClientEvents } from "@app/types";
-import { getChannel } from "./db";
+import { io } from '../sockets';
+import { ServerToClientEvents } from '@app/types';
+import { getChannel } from './db';
 
 /** All event batches */
 const _batches: Record<string, any> = {};

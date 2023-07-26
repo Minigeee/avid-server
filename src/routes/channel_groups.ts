@@ -2,9 +2,9 @@ import assert from 'assert';
 
 import { AclEntry, ChannelGroup, Domain } from '@app/types';
 
-import { getMember, hasPermission, hasPermissionUsingMember, isMember, new_Record, query, sql } from '@/utility/query';
-import { ApiRoutes } from '@/utility/routes';
-import { asRecord, isRecord } from '@/utility/validate';
+import { getMember, hasPermission, hasPermissionUsingMember, isMember, new_Record, query, sql } from '../utility/query';
+import { ApiRoutes } from '../utility/routes';
+import { asRecord, isRecord } from '../utility/validate';
 
 
 const routes: ApiRoutes<`${string} /channel_groups${string}`> = {

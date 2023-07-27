@@ -85,6 +85,7 @@ async function makeExpressServer() {
 		...require('./routes/reactions').default,
 		...require('./routes/roles').default,
 		...require('./routes/tasks').default,
+		...require('./routes/threads').default,
 	});
 
 	// Error handler

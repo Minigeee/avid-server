@@ -1,6 +1,6 @@
 import assert from 'assert';
 
-import { AggregatedReaction, Channel, ExpandedMember, Member, Message } from '@app/types';
+import { AggregatedReaction, Channel, ExpandedMember, Member, Message, Thread } from '@app/types';
 
 import config from '../config';
 import { hasPermission, query, sql } from '../utility/query';
@@ -59,6 +59,11 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				location: 'query',
 				transform: (value) => asRecord('channels', value),
 			},
+			thread: {
+				required: false,
+				location: 'query',
+				transform: (value) => asRecord('threads', value),
+			},
 			page: {
 				required: false,
 				location: 'query',
@@ -74,12 +79,17 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 		code: async (req, res) => {
 			const limit = Math.min(req.query.limit || config.db.page_size.messages, 1000);
 
+			// Message match condition
+			const conds: Partial<Record<keyof Message, string>> = { channel: req.query.channel };
+			if (req.query.thread)
+				conds.thread = req.query.thread;
+
 			// Get messages and reactions
 			const results = await query<[unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Message[]]>(sql.multi([
 				// Get messages
 				sql.let('$messages', sql.select<Message>('*', {
 					from: 'messages',
-					where: sql.match<Message>({ channel: req.query.channel }),
+					where: sql.match<Message>(conds),
 					start: req.query.page !== undefined ? req.query.page * limit : undefined,
 					limit: limit,
 					sort: [{ field: 'created_at', order: 'DESC' }],
@@ -151,25 +161,77 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				location: 'body',
 				transform: (value) => isRecord(value, 'messages'),
 			},
+			thread: {
+				required: false,
+				location: 'body',
+				transform: (value) => isRecord(value, 'threads'),
+			},
 		},
 		permissions: (req) => sql.return(hasPermission(req.token.profile_id, req.body.channel, 'can_send_messages')),
 		code: async (req, res) => {
 			// Analyze message for pings
 			const mentions = findMentions(req.body.message);
 
-			// Post message
-			const results = await query<Message[]>(
+			// Operations
+			let ops: string[] = [];
+			// Thread value
+			let thread: any = req.body.thread;
+
+			// Check if thread logic is needed
+			if (req.body.reply_to) {
+				ops = [
+					// Get message being replied to
+					sql.let('$reply_to', sql.select<Message>(['thread', 'message', 'sender'], { from: req.body.reply_to })),
+					// Get thread id
+					sql.let('$thread', sql.if({
+						cond: '$reply_to.thread != NONE',
+						body: '$reply_to.thread',
+					}, {
+						body: sql.create<Thread>('threads', {
+							channel: req.body.channel,
+							name: sql.$('string::slice($reply_to.message, 0, 64)'),
+							starters: sql.$(`[${req.token.profile_id}, $reply_to.sender]`),
+						}, ['id']),
+					})),
+					// Update replied to's thread value
+					sql.if({
+						cond: '$reply_to.thread != $thread.id',
+						body: sql.update<Message>(req.body.reply_to, { set: { thread: sql.$('$thread.id') } }),
+					}, {
+						body: sql.update<Thread>('($reply_to.thread)', { set: { last_active: sql.$('time::now()') } }),
+					}),
+				];
+
+				// Set thread
+				thread = sql.$('$thread.id');
+			}
+
+			// If thread provieded, update latest activity
+			if (req.body.thread) {
+				ops.push(
+					sql.update<Thread>(req.body.thread, { set: { last_active: sql.$('time::now()') } })
+				);
+			}
+
+			// Create message
+			ops.push(
 				sql.create<Message>('messages', {
 					channel: req.body.channel,
 					sender: req.token.profile_id,
-					reply_to: req.body.reply_to,
 					message: req.body.message,
 					attachments: req.body.attachments,
+					reply_to: req.body.reply_to,
+					thread: thread,
 					mentions: mentions.members.size > 0 || mentions.roles.size > 0 ? {
 						members: Array.from(mentions.members),
 						roles: Array.from(mentions.roles),
 					} : undefined,
-				}),
+				})
+			);
+
+			// Post message
+			const results = await query<Message[]>(
+				sql.transaction(ops),
 				{ log: req.log }
 			);
 			assert(results && results.length > 0);

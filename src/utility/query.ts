@@ -409,7 +409,9 @@ export const sql = {
 		let q = `IF ${blocks[0].cond} THEN ${blocks[0].body.trim()} `;
 		for (let i = 1; i < blocks.length; ++i) {
 			const { cond, body } = blocks[i];
-			q += `${cond ? `ELSE IF ${cond} THEN ` : 'ELSE '}${body.trim()} `;
+			const trimmed = body.trim();
+			const addParen = trimmed.at(0) !== '(' && trimmed.at(-1) !== ')';
+			q += `${cond ? `ELSE IF ${cond} THEN ` : 'ELSE '}${addParen ? '(' : ''}${body.trim()}${addParen ? ')' : ''} `;
 		}
 		q += 'END ';
 

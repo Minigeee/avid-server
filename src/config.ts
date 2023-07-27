@@ -53,6 +53,7 @@ const config = {
 		page_size: {
 			members: 100,
 			messages: 50,
+			threads: 30,
 		},
 	},
 

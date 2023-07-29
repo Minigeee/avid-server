@@ -3,9 +3,10 @@ import assert from 'assert';
 import { AggregatedReaction, Channel, ExpandedMember, Member, Message, Thread } from '@app/types';
 
 import config from '../config';
-import { hasPermission, query, sql } from '../utility/query';
+import { StatusError } from '../utility/error';
+import { SqlContent, hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
-import { asInt, asRecord, isRecord, sanitizeHtml } from '../utility/validate';
+import { asBool, asInt, asRecord, isBool, isRecord, sanitizeHtml } from '../utility/validate';
 import { getClientSocketOrIo } from '../sockets';
 import { getChannel } from '../utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
@@ -64,6 +65,11 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				location: 'query',
 				transform: (value) => asRecord('threads', value),
 			},
+			pinned: {
+				required: false,
+				location: 'query',
+				transform: (value) => asBool(value),
+			},
 			page: {
 				required: false,
 				location: 'query',
@@ -80,9 +86,11 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			const limit = Math.min(req.query.limit || config.db.page_size.messages, 1000);
 
 			// Message match condition
-			const conds: Partial<Record<keyof Message, string>> = { channel: req.query.channel };
+			const conds: Partial<Message> = { channel: req.query.channel };
 			if (req.query.thread)
 				conds.thread = req.query.thread;
+			if (req.query.pinned)
+				conds.pinned = true;
 
 			// Get messages and reactions
 			const results = await query<[unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Message[]]>(sql.multi([
@@ -257,38 +265,74 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				transform: (value) => asRecord('messages', value),
 			},
 			message: {
-				required: true,
+				required: false,
 				location: 'body',
-			}
+			},
+			pinned: {
+				required: false,
+				location: 'body',
+				transform: isBool,
+			},
 		},
 		// Only sender can edit their own message
-		permissions: (req) => sql.return(`${req.params.message_id}.sender == ${req.token.profile_id}`),
-		code: async (req, res) => {
-			// Analyze message for pings
-			const mentions = findMentions(req.body.message);
+		permissions: (req) => {
+			const conds: string[] = [];
 
+			if (req.body.message !== undefined)
+				conds.push(`${req.params.message_id}.sender == ${req.token.profile_id}`);
+			if (req.body.pinned !== undefined)
+				conds.push(hasPermission(req.token.profile_id, `${req.params.message_id}.channel`, 'can_manage_messages'));
+				
+			// Error if no changes
+			if (conds.length === 0)
+				throw new StatusError('must update a message value', { status: 400 });
+
+			return sql.return(conds.join(' && '));
+		},
+		code: async (req, res) => {
+			const updated: SqlContent<Message> = {};
+
+			// Handle message change
+			if (req.body.message !== undefined) {
+				// Analyze message for pings
+				const mentions = findMentions(req.body.message);
+
+				// New message fields
+				updated.message = req.body.message;
+				updated.mentions = mentions.members.size > 0 || mentions.roles.size > 0 ? {
+					members: Array.from(mentions.members),
+					roles: Array.from(mentions.roles),
+				} : undefined;
+				updated.edited = true;
+			}
+
+			// Pin message
+			if (req.body.pinned !== undefined) {
+				updated.pinned = req.body.pinned !== false;
+			}
+
+			// Quit early if no changes
+			if (Object.keys(updated).length === 0)
+				throw new StatusError('must update a message value', { status: 400 });
+
+			// Perform query
 			const results = await query<Message[]>(
 				sql.update<Message>(req.params.message_id, {
-					set: {
-						message: req.body.message,
-						mentions: mentions.members.size > 0 || mentions.roles.size > 0 ? {
-							members: Array.from(mentions.members),
-							roles: Array.from(mentions.roles),
-						} : undefined,
-						edited: true,
-					},
-					return: ['channel', 'message'],
+					set: updated,
+					return: ['channel', 'message', 'pinned'],
 				}),
 				{ log: req.log }
 			);
 			assert(results && results.length > 0);
 
 			// Broadcast new message
-			// TODO : Improve broadcast system
-			await getChannel(results[0].channel).then(channel => {
-				const socket = getClientSocketOrIo(req.token.profile_id);
-				socket.to(channel.domain).emit('chat:edit-message', channel.domain, channel.id, req.params.message_id, results[0].message);
-			});
+			if (req.body.message !== undefined) {
+				// TODO : Improve broadcast system
+				await getChannel(results[0].channel).then(channel => {
+					const socket = getClientSocketOrIo(req.token.profile_id);
+					socket.to(channel.domain).emit('chat:edit-message', channel.domain, channel.id, req.params.message_id, results[0].message);
+				});
+			}
 
 			return { message: results[0].message };
 		},

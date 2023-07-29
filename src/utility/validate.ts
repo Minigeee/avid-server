@@ -89,6 +89,13 @@ export function asBool(str: string) {
 	return str === 'true';
 }
 
+////////////////////////////////////////////////////////////
+export function isBool(value: any) {
+	if (typeof value !== 'boolean')
+		throw new Error('must be a boolean');
+	return value as boolean;
+}
+
 
 ////////////////////////////////////////////////////////////
 export function asInt(str: string, options?: IsNumberOpts) {

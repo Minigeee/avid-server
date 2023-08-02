@@ -93,7 +93,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				conds.pinned = true;
 
 			// Get messages and reactions
-			const results = await query<[unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Message[]]>(sql.multi([
+			const results = await query<[unknown, unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Thread[], Message[]]>(sql.multi([
 				// Get messages
 				sql.let('$messages', sql.select<Message>('*', {
 					from: 'messages',
@@ -104,6 +104,8 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				})),
 				// Unique list of sender ids
 				sql.let('$senders', 'array::group([$messages.sender, array::flatten($messages.mentions.members)])'),
+				// Unique list of threads
+				sql.let('$threads', 'array::distinct($messages.thread)'),
 				// List of reactions
 				sql.select(['emoji', 'count() AS count', `count(in == ${req.token.profile_id}) AS self`, 'out AS message'], {
 					from: 'reactions',
@@ -115,19 +117,30 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 					from: `${req.query.channel}.domain<-member_of`,
 					where: sql.match({ in: ['IN', sql.$('$senders')] }),
 				}),
+				// List of threads
+				sql.select<Thread>('*', {
+					from: 'threads',
+					where: sql.match({ id: ['IN', sql.$('$threads')] }),
+				}),
 				sql.return('$messages'),
 
 			]), { complete: true, log: req.log });
 			assert(results && results.length > 0);
 
-			const reactions = results[2];
-			const members = results[3];
-			const messages = results[4];
+			const reactions = results[3];
+			const members = results[4];
+			const threads = results[5];
+			const messages = results[6];
 
 			// Map of members
 			const memberMap: Record<string, Member> = {};
 			for (const member of members)
 				memberMap[member.id] = omitBy({ ...member, is_admin: member.is_admin || undefined }, isNil) as ExpandedMember;
+
+			// Map of threads
+			const threadMap: Record<string, Thread> = {};
+			for (const thread of threads)
+				threadMap[thread.id] = thread;
 
 			// Map of reactions lists
 			const reactionsMap: Record<string, (AggregatedReaction & { message: undefined })[]> = {};
@@ -145,6 +158,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			return {
 				messages: messages.map(x => ({ ...x, reactions: reactionsMap[x.id] })),
 				members: memberMap,
+				threads: threadMap,
 			};
 		},
 	},

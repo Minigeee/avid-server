@@ -5,7 +5,7 @@ import { Board, ExpandedMember, Member, Task, Thread } from '@app/types';
 import config from '../config';
 import { hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
-import { asInt, asRecord, isArray, isRecord, sanitizeHtml } from '../utility/validate';
+import { asArray, asInt, asRecord, isArray, isRecord, sanitizeHtml } from '../utility/validate';
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, pick, omitBy } from 'lodash';
@@ -19,6 +19,11 @@ const routes: ApiRoutes<`${string} /threads${string}`> = {
 				location: 'query',
 				transform: (value) => asRecord('channels', value),
 			},
+			ids: {
+				required: false,
+				location: 'query',
+				transform: (value) => asArray(value, (value) => asRecord('threads', value), { maxlen: 1000 }),
+			},
 			page: {
 				required: false,
 				location: 'query',
@@ -30,15 +35,26 @@ const routes: ApiRoutes<`${string} /threads${string}`> = {
 				transform: (value) => asInt(value, { min: 1 }),
 			},
 		},
-		permissions: (req) => sql.return(hasPermission(req.token.profile_id, req.query.channel, 'can_view')),
+		permissions: (req) => {
+			const conds = [hasPermission(req.token.profile_id, req.query.channel, 'can_view')];
+			if (req.query.ids)
+				conds.push(`array::all((SELECT VALUE channel == ${req.query.channel} FROM [${req.query.ids.join(',')}]))`);
+
+			return sql.return(conds.join('&&'));
+		},
 		code: async (req, res) => {
 			const limit = Math.min(req.query.limit || config.db.page_size.threads, 1000);
+
+			// Match conditions
+			const match: any = { channel: req.query.channel };
+			if (req.query.ids)
+				match.id = ['IN', req.query.ids];
 
 			// Perform query
 			const results = await query<Thread[]>(
 				sql.select<Thread>('*', {
 					from: 'threads',
-					where: sql.match<Thread>({ channel: req.query.channel }),
+					where: sql.match<Thread>(match),
 					start: req.query.page !== undefined ? req.query.page * limit : undefined,
 					limit: limit,
 					sort: [{ field: 'last_active', order: 'DESC' }],

@@ -202,7 +202,7 @@ export async function makeSocketServer(server: HttpServer) {
 				sql.if({
 					cond: '$allowed = true',
 					body: sql.update<RemoteAppState>(state_id, {
-						set: {
+						content: {
 							// Update values
 							domain: domain_id,
 							channels: { [id(domain_id)]: channel_id },
@@ -211,6 +211,8 @@ export async function makeSocketServer(server: HttpServer) {
 								[id(domain_id)]: { [id(channel_id)]: true },
 							},
 						},
+						merge: true,
+						return: 'NONE',
 					}),
 				}),
 				sql.return('$allowed'),

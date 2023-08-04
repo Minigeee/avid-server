@@ -7,7 +7,7 @@ import { StatusError } from '../utility/error';
 import { SqlContent, hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asBool, asInt, asRecord, isBool, isRecord, sanitizeHtml } from '../utility/validate';
-import { getClientSocketOrIo } from '../sockets';
+import { emitChannelEvent, getClientSocketOrIo } from '../sockets';
 import { getChannel } from '../utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
 
@@ -213,7 +213,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 							channel: req.body.channel,
 							name: sql.$('string::slice($reply_to.message, 0, 64)'),
 							starters: sql.$(`[${req.token.profile_id}, $reply_to.sender]`),
-						}, ['id']),
+						}),
 					})),
 					// Update replied to's thread value
 					sql.if({
@@ -261,11 +261,9 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			// TODO : Send notis to people pinged
 
 			// Broadcast message
-			// TODO : Improve broadcast system
-			await getChannel(req.body.channel).then(channel => {
-				const socket = getClientSocketOrIo(req.token.profile_id);
-				socket.to(channel.domain).emit('chat:message', channel.domain, results[0]);
-			});
+			emitChannelEvent(req.body.channel, (room) => {
+				room.emit('chat:message', results[0]);
+			}, { profile_id: req.token.profile_id });
 
 			return results[0];
 		},
@@ -333,19 +331,20 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			const results = await query<Message[]>(
 				sql.update<Message>(req.params.message_id, {
 					set: updated,
-					return: ['channel', 'message', 'pinned'],
+					return: ['channel', 'message', 'pinned', 'edited', 'mentions'],
 				}),
 				{ log: req.log }
 			);
 			assert(results && results.length > 0);
 
-			// Broadcast new message
-			if (req.body.message !== undefined) {
-				// TODO : Improve broadcast system
-				await getChannel(results[0].channel).then(channel => {
-					const socket = getClientSocketOrIo(req.token.profile_id);
-					socket.to(channel.domain).emit('chat:edit-message', channel.domain, channel.id, req.params.message_id, results[0].message);
-				});
+			// Broadcast edit message
+			{
+				const message = results[0];
+				const { message_id } = req.params;
+
+				emitChannelEvent(message.channel, (room) => {
+					room.emit('chat:edit-message', message.channel, message_id, message);
+				}, { profile_id: req.token.profile_id, mark_unseen: false });
 			}
 
 			return { message: results[0].message };
@@ -370,11 +369,14 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			assert(results && results.length > 0);
 
 			// Broadcast deletion
-			// TODO : Improve broadcast system
-			await getChannel(results[0].channel).then(channel => {
-				const socket = getClientSocketOrIo(req.token.profile_id);
-				socket.to(channel.domain).emit('chat:delete-message', channel.domain, channel.id, req.params.message_id);
-			});
+			{
+				const channel_id = results[0].channel;
+				const { message_id } = req.params;
+
+				emitChannelEvent(channel_id, (room) => {
+					room.emit('chat:delete-message', channel_id, message_id);
+				}, { profile_id: req.token.profile_id, mark_unseen: false });
+			}
 		},
 	},
 };

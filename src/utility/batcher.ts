@@ -1,4 +1,4 @@
-import { io } from '../sockets';
+import { emitChannelEvent, io } from '../sockets';
 import { ServerToClientEvents } from '@app/types';
 import { getChannel } from './db';
 
@@ -50,10 +50,10 @@ const _batchers: { [E in keyof BatchEvents]: Batcher<E> } = {
 				batch.changes[emoji] += delta;
 		},
 		emit({ channel_id, message_id, changes }) {
-			// TODO : Broadcast system
-			getChannel(channel_id).then(channel => {
-				io().to(channel.domain).emit('chat:reactions', channel_id, message_id, changes, false);
-			});
+			// Emit as channel event
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('chat:reactions', channel_id, message_id, changes, false);
+			}, { mark_unseen: false });
 		},
 	},
 };

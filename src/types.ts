@@ -1,5 +1,5 @@
 import { Socket as _Socket } from 'socket.io';
-import { ClientToServerEvents, ServerToClientEvents } from '@app/types';
+import { ClientToServerEvents, RemoteAppState, ServerToClientEvents } from '@app/types';
 
 export type Socket = _Socket<ClientToServerEvents, ServerToClientEvents>;
 
@@ -11,6 +11,8 @@ export type Client = {
     socket: Socket;
     /** A map of domain ids the user belongs to, to the roles assigned to the user within each domain */
     domains: Record<string, string[]>;
+    /** The user's app state */
+    app: RemoteAppState;
 
     /** The current domain the user is viewing */
     current_domain: string;

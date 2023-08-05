@@ -194,11 +194,13 @@ export async function makeSocketServer(server: HttpServer) {
 
 		// Called when user switches the channel/domain they are viewing
 		socket.on('general:switch-room', wrapper.event(async (domain_id: string, channel_id: string) => {
-			const state_id = `app_states:${client.profile_id.split(':')[1]}`;
+			if (!domain_id || !channel_id)
+				throw new Error('must provide a domain and a channel');
 
 			// Make sure user has permission to view channel
+			const state_id = `app_states:${client.profile_id.split(':')[1]}`;
 			const canView = await query<boolean>(sql.transaction([
-				sql.let('$allowed', `${hasPermission(client.profile_id, channel_id, 'can_view', domain_id)} && ${hasPermission(client.profile_id, domain_id, 'can_view', domain_id)}`),
+				sql.let('$allowed', hasPermission(client.profile_id, channel_id, 'can_view', domain_id)),
 				sql.if({
 					cond: '$allowed = true',
 					body: sql.update<RemoteAppState>(state_id, {
@@ -302,6 +304,8 @@ type ChannelEmitOptions = {
 	profile_id?: string;
 	/** Determines if this channel should be marked as 'unseen' for users not viewing the channel (default: true) */
 	mark_unseen?: boolean;
+	/** Metadata that gets passed to activity event */
+	activity_data?: any;
 };
 
 /**

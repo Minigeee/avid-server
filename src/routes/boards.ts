@@ -4,6 +4,7 @@ import { Board, Task, TaskCollection } from '@app/types';
 
 import { hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
+import { emitChannelEvent } from '../sockets';
 import {  asRecord, isArray, sanitizeHtml } from '../utility/validate';
 
 import { pick } from 'lodash';
@@ -57,11 +58,23 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 						}],
 						_id_counter: ['+=', 1],
 					},
-					return: ['collections', '_id_counter'],
+					return: ['channel', 'collections', '_id_counter'],
 				}),
 				{ log: req.log }
 			);
 			assert(results && results.length > 0);
+
+			// Notify that new collection
+			console.log(results);
+			const board = results[0];
+			board.id = req.params.board_id;
+			emitChannelEvent(board.channel, (room) => {
+				const collection_id = (board._id_counter - 1).toString();
+				const collection = board.collections.find(x => x.id == collection_id);
+				console.log(collection_id, collection, board.collections)
+				if (collection)
+					room.emit('board:add-collection', board.id, collection);
+			}, { profile_id: req.token.profile_id });
 
 			return results[0];
 		},
@@ -107,11 +120,17 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 							return this.collections;
 						}, { collection_id, collection }),
 					},
-					return: ['collections'],
+					return: ['channel', 'collections'],
 				}),
 				{ log: req.log }
 			);
 			assert(results && results.length);
+
+			// Notify that board has changed
+			const channel_id = results[0].channel;
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('board:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
 
 			return results[0];
 		},
@@ -142,16 +161,23 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 				sql.update<Board>(req.params.board_id, {
 					set: {
 						collections: sql.fn<Board>(function() {
-							return this.collections.filter(x => x.id !== req.params.collection_id);
+							return this.collections.filter(x => x.id !== collection_id);
 						}, { collection_id }),
 					},
-					return: ['collections'],
+					return: ['channel', 'collections'],
 				}),
 			]), { complete: true, log: req.log });
 			assert(results);
 
 			const [tasks, newBoards] = results;
 			assert(newBoards.length > 0);
+
+			// Notify that delete collection
+			const board = newBoards[0];
+			board.id = req.params.board_id;
+			emitChannelEvent(board.channel, (room) => {
+				room.emit('board:delete-collection', board.id, collection_id);
+			}, { profile_id: req.token.profile_id });
 
 			return {
 				collections: newBoards[0].collections,
@@ -211,13 +237,17 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 
 						_id_counter: ['+=', add.length],
 					},
-					return: ['tags', '_id_counter'],
+					return: ['channel', 'tags', '_id_counter'],
 				}),
 				{ log: req.log }
 			);
-			assert(results && results[0]);
+			assert(results && results.length > 0 && results[0]);
 
-			// WIP : Change use-board to use api
+			// Notify that board has changed
+			const channel_id = results[0].channel;
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('board:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
 
 			return results[0];
 		},

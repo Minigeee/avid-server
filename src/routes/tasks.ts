@@ -3,6 +3,7 @@ import assert from 'assert';
 import { Board, ExpandedMember, Member, Task } from '@app/types';
 
 import config from '../config';
+import { emitChannelEvent } from '../sockets';
 import { hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asRecord, isArray, isRecord, sanitizeHtml } from '../utility/validate';
@@ -142,10 +143,13 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 			const task = pickTask(req.body);
 
 			// Create task
-			const results = await query<Task[]>(
+			const results = await query<[unknown, string, Task[]]>(
 				sql.transaction([
 					// Increment counter
-					sql.update<Board>(req.body.board, { set: { _task_counter: ['+=', 1] } }),
+					sql.update<Board>(req.body.board, { set: { _task_counter: ['+=', 1] }, return: 'NONE' }),
+
+					// Get channel
+					sql.return(`${req.body.board}.channel`),
 
 					// Create task
 					sql.create<Task>('tasks', {
@@ -155,13 +159,17 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 						status: task.status || config.app.board.default_status_id,
 					}),
 				]),
-				{ log: req.log }
+				{ complete: true, log: req.log }
 			);
-			assert(results && results.length);
+			assert(results && results.length > 0);
 
-			// TODO : Broadcast event
+			// Notify that board has changed
+			const channel_id = results[1];
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('board:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
 
-			return results[0];
+			return results[2][0];
 		},
 	},
 
@@ -208,6 +216,10 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 			// List of update operations
 			const ops = [];
 
+			// Get channel (of the first task being updated/deleted)
+			if (req.body.update?.length || req.body.delete?.length)
+				ops.push(sql.return(`${req.body.update?.length ? req.body.update[0].id : req.body.delete?.[0]}.board.channel`));
+
 			// Update
 			if (req.body.update) {
 				ops.push(
@@ -238,10 +250,16 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 
 			// Execute ops
 			const results = await query<Task[][]>(sql.transaction(ops), { complete: true, log: req.log });
-			assert(results && results.length === (req.body.update?.length || 0) + (req.body.delete ? 1 : 0));
-			if (!req.body.update) return {};
+			assert(results && results.length === (req.body.update?.length || 0) + (req.body.delete ? 1 : 0) + 1);
 
-			return { updated: results.slice(0, req.body.update.length).map(x => x[0]) };
+			// Notify that board has changed
+			const channel_id = results[0] as unknown as string;
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('board:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
+			
+			if (!req.body.update) return {};
+			return { updated: results.slice(1, req.body.update.length + 1).map(x => x[0]) };
 		},
 	},
 
@@ -336,7 +354,10 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 			const now = new Date().toISOString();
 
 			// Update task
-			const results = await query<Task[]>(
+			const results = await query<[string, Task[]]>(sql.multi([
+				// Get channel
+				sql.return(`${req.params.task_id}.board.channel`),
+
 				sql.update<Task>(req.params.task_id, {
 					content: {
 						...task,
@@ -344,11 +365,16 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 						time_status_updated: task.status !== undefined ? now : undefined,
 					},
 				}),
-				{ log: req.log }
-			);
-			assert(results && results.length > 0);
+			]), { complete: true, log: req.log });
+			assert(results && results.length > 0 && results[1].length > 0);
 
-			return results[0];
+			// Notify that board changed
+			const channel_id = results[0];
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('board:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
+
+			return results[1][0];
 		},
 	},
 
@@ -362,7 +388,17 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 		},
 		permissions: (req) => sql.return(`${hasPermission(req.token.profile_id, `${req.params.task_id}.board`, 'can_manage_tasks')} || (${req.params.task_id}.assignee == ${req.token.profile_id} && ${hasPermission(req.token.profile_id, `${req.params.task_id}.board`, 'can_manage_own_tasks')})`),
 		code: async (req, res) => {
-			await query(sql.delete(req.params.task_id), { log: req.log });
+			const results = await query<[string, unknown]>(sql.multi([
+				sql.return(`${req.params.task_id}.board.channel`),
+				sql.delete(req.params.task_id),
+			]), { complete: true, log: req.log });
+			assert(results && results.length > 0);
+
+			// Notify that board changed
+			const channel_id = results[0];
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('board:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
 		},
 	},
 };

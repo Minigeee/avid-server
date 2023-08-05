@@ -128,6 +128,14 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 				}))
 			);
 
+			// Board
+			if (type === 'board') {
+				ops.push(sql.update<Board>('($board.id)', {
+					set: { channel: sql.$('$channel.id') },
+					return: 'NONE',
+				}));
+			}
+
 			// Return channel
 			ops.push(sql.return('$channel'));
 

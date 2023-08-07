@@ -5,7 +5,7 @@ import { Board, Task, TaskCollection } from '@app/types';
 import { hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { emitChannelEvent } from '../sockets';
-import {  asRecord, isArray, sanitizeHtml } from '../utility/validate';
+import { asRecord, isArray, sanitizeHtml } from '../utility/validate';
 
 import { pick } from 'lodash';
 
@@ -23,6 +23,39 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 		code: async (req, res) => {
 			const results = await query<Board[]>(sql.select<Board[]>('*', { from: req.params.board_id }), { log: req.log });
 			assert(results && results.length > 0);
+
+			return results[0];
+		},
+	},
+
+	"PATCH /boards/:board_id": {
+		validate: {
+			board_id: {
+				required: true,
+				location: 'params',
+				transform: (value) => asRecord('boards', value),
+			},
+			prefix: {
+				required: true,
+				location: 'body',
+			},
+		},
+		permissions: (req) => sql.return(`${hasPermission(req.token.profile_id, req.params.board_id, 'can_manage')} || ${hasPermission(req.token.profile_id, req.params.board_id, 'can_manage_resources')}`),
+		code: async (req, res) => {
+			const results = await query<Board[]>(
+				sql.update<Board>(req.params.board_id, {
+					set: { prefix: req.body.prefix },
+					return: ['channel', 'prefix'],
+				}),
+				{ log: req.log }
+			);
+			assert(results && results.length > 0);
+
+			// Notify that activity
+			const board = results[0];
+			emitChannelEvent(board.channel, (room) => {
+				room.emit('board:activity', board.channel);
+			}, { profile_id: req.token.profile_id });
 
 			return results[0];
 		},
@@ -65,7 +98,6 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 			assert(results && results.length > 0);
 
 			// Notify that new collection
-			console.log(results);
 			const board = results[0];
 			board.id = req.params.board_id;
 			emitChannelEvent(board.channel, (room) => {

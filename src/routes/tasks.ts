@@ -143,7 +143,7 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 			const task = pickTask(req.body);
 
 			// Create task
-			const results = await query<[unknown, string, Task[]]>(
+			const results = await query<[string, Task[]]>(
 				sql.transaction([
 					// Increment counter
 					sql.update<Board>(req.body.board, { set: { _task_counter: ['+=', 1] }, return: 'NONE' }),
@@ -164,12 +164,12 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
 			assert(results && results.length > 0);
 
 			// Notify that board has changed
-			const channel_id = results[1];
+			const channel_id = results[0];
 			emitChannelEvent(channel_id, (room) => {
 				room.emit('board:activity', channel_id);
 			}, { profile_id: req.token.profile_id });
 
-			return results[2][0];
+			return results[1][0];
 		},
 	},
 

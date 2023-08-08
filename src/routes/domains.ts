@@ -7,7 +7,94 @@ import { ApiRoutes } from '../utility/routes';
 import { asRecord, isArray, isRecord } from '../utility/validate';
 
 
+////////////////////////////////////////////////////////////
+const TEMPLATES = {
+	default: () => ([
+		sql.let('$groups', '[]'),
+		sql.let('$group', sql.create<ChannelGroup>('channel_groups', {
+			domain: sql.$('$domain.id'),
+			name: 'Main',
+			channels: sql.$('[]'),
+		})),
+		sql.update<ChannelGroup>('($group.id)', {
+			set: {
+				channels: sql.$('[' + sql.wrap(
+					sql.create<Channel>('channels', {
+						domain: sql.$('$domain.id'),
+						inherit: sql.$('$group.id'),
+						name: 'general',
+						type: 'text',
+					}),
+					{ append: '.id' }
+				) + ']'),
+			},
+		}),
+		sql.create<AclEntry>('acl', {
+			domain: sql.$('$domain.id'),
+			resource: sql.$('$group.id'),
+			role: sql.$('$role.id'),
+			permissions: [
+				'can_view',
+				'can_send_messages',
+				'can_send_attachments',
+				'can_broadcast_audio',
+				'can_broadcast_video',
+			],
+		}),
+		sql.let('$groups', `array::append($groups, $group.id)`),
+	]),
+};
+
+
 const routes: ApiRoutes<`${string} /domains${string}`> = {
+	"POST /domains": {
+		validate: {
+			name: {
+				required: true,
+				location: 'body',
+			},
+		},
+		// TODO : Limit on how many domains a user can own
+		code: async (req, res) => {
+			// Create new domain with the specified name and make user join
+			const results = await query<Domain[]>(sql.transaction([
+				// Create domain
+				sql.let('$domain', sql.create<Domain>('domains', {
+					name: req.body.name,
+					groups: [],
+				})),
+				// Create everyone role
+				sql.let('$role', sql.create<Role>('roles', {
+					domain: sql.$('$domain.id'),
+					label: 'everyone',
+				})),
+				// Create starting template configuration
+				...TEMPLATES.default(),
+				// Add starting config to domain
+				sql.let('$domain', sql.update<Domain>('$domain', {
+					set: {
+						_default_role: sql.$('$role.id'),
+						groups: sql.$('$groups'),
+					},
+				})),
+				// Add member to domain as owner/admin
+				sql.relate<Member>(req.token.profile_id, 'member_of', '$domain', {
+					content: {
+						alias: sql.$(`${req.token.profile_id}.username`),
+						roles: [sql.$('$role.id')],
+						is_owner: true,
+						is_admin: true,
+					},
+				}),
+				// Return id of domain
+				sql.return('$domain'),
+			]), { log: req.log });
+			assert(results && results.length > 0);
+
+			return results[0];
+		},
+	},
+
 	"GET /domains/:domain_id": {
 		validate: {
 			domain_id: {
@@ -173,6 +260,61 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
 				}),
 				{ log: req.log }
 			);
+			assert(results && results.length > 0);
+
+			return results[0];
+		},
+	},
+
+	"GET /domains/join/:join_id": {
+		validate: {
+			join_id: {
+				required: true,
+				location: 'params',
+			},
+		},
+		code: async (req, res) => {
+			const domain_id = asRecord('domains', req.params.join_id);
+
+			// Try adding member
+			const results = await query<(Domain & { members: string[] })[]>(
+				sql.select<Domain>([
+					'name',
+					'icon',
+					sql.wrap(`<-(member_of WHERE in = ${req.token.profile_id})`, { alias: 'members' })
+				], {
+					from: domain_id,
+				}),
+				{ log: req.log }
+			);
+			assert(results && results.length > 0);
+
+			return { name: results[0].name, icon: results[0].icon, is_member: results[0].members.length > 0 };
+		},
+	},
+
+	"POST /domains/join/:join_id": {
+		validate: {
+			join_id: {
+				required: true,
+				location: 'params',
+			},
+		},
+		// TODO : Rework this in the invitation system
+		code: async (req, res) => {
+			const domain_id = asRecord('domains', req.params.join_id);
+
+			// Try adding member
+			const results = await query<Domain[]>(sql.multi([
+				sql.let('$domain', sql.select<Domain>(['id', 'name', 'icon', '_default_role'], { from: domain_id })),
+				sql.relate<Member>(req.token.profile_id, 'member_of', '$domain', {
+					content: {
+						alias: sql.$(`${req.token.profile_id}.username`),
+						roles: [sql.$('$domain._default_role')],
+					}
+				}),
+				sql.select('*', { from: '$domain' }),
+			]), { log: req.log });
 			assert(results && results.length > 0);
 
 			return results[0];

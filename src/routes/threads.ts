@@ -1,14 +1,11 @@
 import assert from 'assert';
 
-import { Board, ExpandedMember, Member, Task, Thread } from '@app/types';
+import { Thread } from '@app/types';
 
 import config from '../config';
 import { hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asArray, asInt, asRecord, isArray, isRecord, sanitizeHtml } from '../utility/validate';
-import { MEMBER_SELECT_FIELDS } from './members';
-
-import { isNil, pick, omitBy } from 'lodash';
 
 
 const routes: ApiRoutes<`${string} /threads${string}`> = {

@@ -15,10 +15,11 @@ COPY . .
 
 RUN npm run build
 
+
 FROM node:slim
 
 ENV NODE_ENV production
-ENV PORT 3000
+ENV PORT 5000
 USER node
 
 # Create app directory
@@ -29,7 +30,8 @@ COPY package*.json ./
 
 RUN npm ci --production
 
+COPY --from=builder /usr/src/app/credentials ./credentials
 COPY --from=builder /usr/src/app/dist ./dist
 
-EXPOSE 3000
+EXPOSE 5000
 CMD [ "node", "dist/src/server.js" ]

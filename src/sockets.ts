@@ -142,6 +142,7 @@ export async function makeSocketServer(server: HttpServer) {
 				channels: {},
 				expansions: {},
 				seen: {},
+				pings: {},
 			},
 
 			current_domain: app?.domain || '',
@@ -211,6 +212,10 @@ export async function makeSocketServer(server: HttpServer) {
 							// Update seen state
 							seen: {
 								[id(domain_id)]: { [id(channel_id)]: true },
+							},
+							// Reset pings
+							pings: {
+								[id(channel_id)]: 0,
 							},
 						},
 						merge: true,
@@ -286,6 +291,9 @@ export async function makeSocketServer(server: HttpServer) {
 ///////////////////////////////////////////////////////////
 export function io() { return _socketServer; }
 
+///////////////////////////////////////////////////////////
+export function clients() { return _clients; }
+
 
 /**
  * Get socket client for a user, but returns io as back up
@@ -322,7 +330,7 @@ type ChannelEmitOptions = {
  * @param emitter The function used to emit the full event
  * @param options Emit options
  */
-export async function emitChannelEvent(channel_id: string, emitter: (room: ReturnType<Socket['to']>, channel: Channel) => void, options?: ChannelEmitOptions) {
+export async function emitChannelEvent(channel_id: string, emitter: (room: ReturnType<Socket['to']>, channel: Channel) => void | Promise<void>, options?: ChannelEmitOptions) {
 	// Get socket to emit
 	const socket = getClientSocketOrIo(options?.profile_id);
 
@@ -332,7 +340,7 @@ export async function emitChannelEvent(channel_id: string, emitter: (room: Retur
 	// Emit the activity event to inactive channel
 	socket.to(_inactive(channel_id)).emit('general:activity', channel.domain, channel_id, options?.mark_unseen !== false);
 	// Emit the event to active channel
-	emitter(socket.to(channel_id), channel);
+	await emitter(socket.to(channel_id), channel);
 
 	// Code to mark channel as unseen
 	if (options?.mark_unseen !== false) {

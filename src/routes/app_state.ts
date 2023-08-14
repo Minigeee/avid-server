@@ -52,6 +52,7 @@ const routes: ApiRoutes<`${string} /app${string}`> = {
 				channels: recordKeys(state.channels, 'domains'),
 				expansions: recordKeys(state.expansions, 'domains'),
 				seen: recordKeys(state.seen, 'domains', (v) => recordKeys(v, 'channels')),
+				pings: recordKeys(state.pings, 'channels'),
 			} : null;
 		},
 	},
@@ -79,6 +80,11 @@ const routes: ApiRoutes<`${string} /app${string}`> = {
 					id(k),
 					transformObject(v, (k, v) => ([id(k), isBool(v)]))
 				])),
+			},
+			pings: {
+				required: false,
+				location: 'body',
+				transform: (value) => transformObject(value, (k, v) => ([id(k), v])),
 			},
 			right_panel_opened: {
 				required: false,

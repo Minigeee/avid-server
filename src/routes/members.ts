@@ -17,6 +17,7 @@ export const MEMBER_SELECT_FIELDS = [
 	'is_owner',
 	'alias',
 	'roles',
+	'time_joined',
 	'in.profile_picture AS profile_picture',
 	'in.online AS online',
 ];

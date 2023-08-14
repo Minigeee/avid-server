@@ -8,6 +8,7 @@ import { SqlContent, hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asBool, asInt, asRecord, isBool, isRecord, sanitizeHtml } from '../utility/validate';
 import { emitChannelEvent, getClientSocketOrIo } from '../sockets';
+import { ping } from '../utility/ping';
 import { getChannel } from '../utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
 
@@ -261,8 +262,17 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			// TODO : Send notis to people pinged
 
 			// Broadcast message
-			emitChannelEvent(req.body.channel, (room) => {
+			const sender_id = req.token.profile_id;
+			emitChannelEvent(req.body.channel, async (room, channel) => {
+				// Emit
 				room.emit('chat:message', results[0]);
+
+				// Send ping
+				await ping(channel.domain, channel.id, {
+					member_ids: Array.from(mentions.members),
+					role_ids: Array.from(mentions.roles),
+					sender_id,
+				});
 			}, { profile_id: req.token.profile_id });
 
 			return results[0];

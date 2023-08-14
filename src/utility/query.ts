@@ -141,6 +141,8 @@ export type SqlSelectOptions<T extends object> = {
 	fetch?: (Selectables<T> | (string & {}))[];
 	/** Group by */
 	group?: 'all' | (Selectables<T> | (string & {}))[];
+	/** Should the single value be fetched */
+	value?: boolean;
 };
 
 type _SqlUpdateBaseOptions<T extends object> = {
@@ -245,7 +247,7 @@ export const sql = {
 
 	/** Match a set of expressions and join them with "and" or "or", where each object key and value are being compared for equality.
 	 * Other boolean operators can be used if object values are arrays, where [0] is the operator and [1] is the second operand */
-	match: <T extends object>(conds: { [K in keyof T]?: SqlType | SqlContent<T[K]> | [SqlOp, SqlType] }, join: '&&' | '||' = '&&') =>
+	match: <T extends object>(conds: { [K in keyof T]?: SqlType | SqlContent<T[K]> | [SqlOp, SqlType | SqlContent<T[K]>] }, join: '&&' | '||' = '&&') =>
 		Object.entries(conds).map(([k, v]) => !Array.isArray(v) ? `${k}=${_json(v)}` : `${k} ${v[0]} ${_json(v[1])}`).join(join) + ' ',
 
 	/** Chain multiple statements */
@@ -342,7 +344,7 @@ export const sql = {
 
 	/** Select statement */
 	select: <T extends object>(fields: '*' | (Selectables<T> | (string & {}))[], options: SqlSelectOptions<T>) => {
-		let q = `SELECT ${typeof fields === 'string' ? '*' : fields.join(',')} FROM ${options.from} `;
+		let q = `SELECT ${options.value ? 'VALUE ' : ''}${typeof fields === 'string' ? '*' : fields.join(',')} FROM ${options.from} `;
 		if (options.where)
 			q += `WHERE ${options.where} `;
 

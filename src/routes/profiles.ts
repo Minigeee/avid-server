@@ -20,7 +20,7 @@ const routes: ApiRoutes<`${string} /profiles${string}`> = {
 				transform: (value) => asRecord('profiles', value),
 			},
 		},
-		permissions: (req) => sql.return(`${req.params.profile_id} == ${req.token.profile_id} || ${req.params.profile_id}->member_of.out CONTAINSANY ${req.token.profile_id}->member_of.out`),
+		permissions: (req) => sql.return(`${req.params.profile_id} == ${req.token.profile_id} || (SELECT VALUE out FROM ${req.params.profile_id}->member_of) CONTAINSANY (SELECT VALUE out FROM ${req.token.profile_id}->member_of)`),
 		code: async (req, res) => {
 			const results = await query<ExpandedProfile[]>(
 				sql.select([

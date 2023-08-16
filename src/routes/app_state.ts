@@ -73,7 +73,7 @@ const routes: ApiRoutes<`${string} /app${string}`> = {
 				location: 'body',
 				transform: (value) => transformObject(value, (k, v) => ([id(k), v])),
 			},
-			seen: {
+			last_accessed: {
 				required: false,
 				location: 'body',
 				transform: (value) => transformObject(value, (k, v) => ([

@@ -53,7 +53,7 @@ const _batchers: { [E in keyof BatchEvents]: Batcher<E> } = {
 			// Emit as channel event
 			emitChannelEvent(channel_id, (room) => {
 				room.emit('chat:reactions', channel_id, message_id, changes, false);
-			}, { mark_unseen: false });
+			}, { is_event: false });
 		},
 	},
 };

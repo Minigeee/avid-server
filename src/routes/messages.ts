@@ -354,7 +354,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 
 				emitChannelEvent(message.channel, (room) => {
 					room.emit('chat:edit-message', message.channel, message_id, message);
-				}, { profile_id: req.token.profile_id, mark_unseen: false });
+				}, { profile_id: req.token.profile_id, is_event: false });
 			}
 
 			return { message: results[0].message };
@@ -385,7 +385,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 
 				emitChannelEvent(channel_id, (room) => {
 					room.emit('chat:delete-message', channel_id, message_id);
-				}, { profile_id: req.token.profile_id, mark_unseen: false });
+				}, { profile_id: req.token.profile_id, is_event: false });
 			}
 		},
 	},

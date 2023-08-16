@@ -4,7 +4,7 @@ import { Server as SocketServer } from 'socket.io';
 
 import config from './config';
 import { getSessionUser } from './utility/auth';
-import { getChannel } from './utility/db';
+import { getChannel, getDomainChannels, getDomainChannelsCache } from './utility/db';
 import { hasPermission, id, query, sql } from './utility/query';
 import wrapper from './utility/wrapper';
 import { log } from './logs';
@@ -46,7 +46,7 @@ export async function getUserInfo(profile_id: string) {
 	// Get member info
 	const results = await query<[(Member & { out: string })[], RemoteAppState[]]>(sql.multi([
 		sql.select<Member>(['out', 'roles'], { from: `${profile_id}->member_of` }),
-		sql.select<RemoteAppState>(['domain', 'channels', 'seen'], { from: appId }),
+		sql.select<RemoteAppState>(['domain', 'channels', 'last_accessed'], { from: appId }),
 	]), { complete: true });
 	assert(results && results.length > 0);
 
@@ -66,41 +66,9 @@ export async function getUserInfo(profile_id: string) {
 			...state,
 			channels: _recordKeys(state.channels, 'domains') || {},
 			expansions: _recordKeys(state.expansions, 'domains') || {},
-			seen: _recordKeys(state.seen, 'domains', (v) => _recordKeys(v, 'channels')) || {},
+			last_accessed: _recordKeys(state.last_accessed, 'domains', (x) => _recordKeys(x, 'channels')) || {},
 		} as RemoteAppState : null,
 	};
-}
-
-/**
- * Set the channel seen value of a client locally and remotely.
- * It will perform the update based on the current domain and channel of the client.
- * Does nothing if there is no current domain or channel.
- * 
- * @param client The client to update
- * @param seen The new value to set
- */
-export function setChannelSeen(client: Client, seen: boolean, remote: boolean = true) {
-	// Mark new channel as seen
-	if (client.current_domain && client.current_channel) {
-		// Update locally
-		if (!client.app.seen[client.current_domain])
-			client.app.seen[client.current_domain] = {};
-		client.app.seen[client.current_domain][client.current_channel] = seen;
-
-		// Update database
-		if (remote) {
-			const id = `app_states:${client.profile_id.split(':')[1]}`;
-			query(sql.update<RemoteAppState>(id, {
-				content: {
-					seen: {
-						[client.current_domain]: { [client.current_channel]: seen },
-					}
-				},
-				merge: true,
-				return: 'NONE',
-			}));
-		}
-	}
 }
 
 
@@ -127,6 +95,7 @@ export async function makeSocketServer(server: HttpServer) {
 
 		// Get user info
 		const profile_id = user.profile_id;
+
 		const { domains, app } = await getUserInfo(profile_id);
 
 		// Add socket data
@@ -141,23 +110,40 @@ export async function makeSocketServer(server: HttpServer) {
 				domain: null,
 				channels: {},
 				expansions: {},
-				seen: {},
+				last_accessed: {},
 				pings: {},
 			},
 
 			current_domain: app?.domain || '',
 			current_channel: app?.channels?.[app?.domain || ''] || '',
 		};
+
+		// Disconnect previous socket
+		const hasPrevSocket = _clients[profile_id]?.socket.connected;
+
+		// Set new client
 		_clients[profile_id] = client;
+		
+		// Dc prev socket
+		if (hasPrevSocket)
+			_clients[profile_id].socket.disconnect();
+
+
+		// Create map of time each channel last had an event
+		const currentChannels = client.current_domain ? await getDomainChannels(client.current_domain) : [];
+		const lastEvent: Record<string, Date> = {};
+		for (const channel of currentChannels)
+			lastEvent[channel.id] = new Date(channel._last_event);
 
 		// Join inactive type for all seen channels
 		const inactive: string[] = [];
-		for (const [channel_id, seen] of Object.entries(app?.seen[client.current_domain] || {})) {
+		for (const [channel_id, lastAccessed] of Object.entries(client.app?.last_accessed[client.current_domain] || {})) {
 			// Skip if the channel is the current
 			if (channel_id === client.current_channel)
 				continue;
 
-			if (seen)
+			// Add to inactive room if the last time the user accessed the channel is greater than or equal to the time of the last event (meaning the channel is completely seen)
+			if (lastEvent[channel_id] && new Date(lastAccessed) >= lastEvent[channel_id])
 				inactive.push(_inactive(channel_id));
 		}
 
@@ -180,8 +166,13 @@ export async function makeSocketServer(server: HttpServer) {
 
 		// Called when the socket disconnects for any reason
 		socket.on('disconnect', wrapper.event((reason) => {
+			// Check if socket is still connected (i.e. user tried connecting twice and the second connection booted the first one off)
+			if (_clients[profile_id].socket.id !== socket.id) return;
+
 			// Mark profile as offline
 			query(sql.update<Profile>(profile_id, { set: { online: false } }));
+
+			// TODO : Update last accessed on user leave
 
 			// Notify in every domain the user is in that they left
 			socket.to(Object.keys(domains)).emit('general:user-left', profile_id);
@@ -209,10 +200,12 @@ export async function makeSocketServer(server: HttpServer) {
 							// Update values
 							domain: domain_id,
 							channels: { [id(domain_id)]: channel_id },
-							// Update seen state
-							seen: {
-								[id(domain_id)]: { [id(channel_id)]: true },
-							},
+							// Update last accessed time
+							last_accessed: sql.fn<RemoteAppState>(function () {
+								const domain_id = this.domain ? this.domain.toString().split(':')[1] : null;
+								const channel_id = domain_id && this.channels[domain_id] ? this.channels[domain_id].toString().split(':')[1] : null;
+								return domain_id && channel_id ? { [domain_id]: { [channel_id]: new Date() } } : {};
+							}),
 							// Reset pings
 							pings: {
 								[id(channel_id)]: 0,
@@ -228,8 +221,19 @@ export async function makeSocketServer(server: HttpServer) {
 			if (!canView)
 				throw new Error('you do not have permission to view the requested channel');
 
+			// Update last accessed locally
+			if (!client.app.last_accessed[client.current_domain])
+				client.app.last_accessed[client.current_domain] = {};
+			client.app.last_accessed[client.current_domain][client.current_channel] = new Date().toISOString();
+
 			// Leave old domain and join new
 			if (domain_id !== client.current_domain) {
+				// Create map of time each channel last had an event for new domain
+				const currentChannels = await getDomainChannels(domain_id);
+				const lastEvent: Record<string, Date> = {};
+				for (const channel of currentChannels)
+					lastEvent[channel.id] = new Date(channel._last_event);
+
 				// Switch domain
 				socket.leave(client.current_domain);
 				socket.join(domain_id);
@@ -239,26 +243,24 @@ export async function makeSocketServer(server: HttpServer) {
 				socket.join(channel_id);
 
 				// Leave all channels of old domain
-				for (const channel_id of Object.keys(app?.seen[client.current_domain] || {}))
+				for (const channel_id of Object.keys(client.app.last_accessed[client.current_domain] || {}))
 					socket.leave(_inactive(channel_id));
 
 				// Join all seen channels of new domain
 				const newInactive: string[] = [];
-				for (const [id, seen] of Object.entries(app?.seen[client.current_domain] || {})) {
+				for (const [id, lastAccessed] of Object.entries(client.app.last_accessed[domain_id] || {})) {
 					// Skip if the channel is the current
 					if (id === channel_id)
 						continue;
 
-					if (seen)
+					if (lastEvent[id] && new Date(lastAccessed) >= lastEvent[id])
 						newInactive.push(_inactive(id));
 				}
 				socket.join(newInactive);
 
+				// Update current
 				client.current_channel = channel_id;
 				client.current_domain = domain_id;
-
-				// Mark channel as seen
-				setChannelSeen(client, true, false);
 			}
 
 			// Leave old channel and join new
@@ -272,11 +274,11 @@ export async function makeSocketServer(server: HttpServer) {
 				// Join inactive for the old channel
 				socket.join(_inactive(client.current_channel));
 
+				// Update current
 				client.current_channel = channel_id;
-
-				// Mark channel as seen
-				setChannelSeen(client, true, false);
 			}
+
+			// setTimeout(() => console.log(socket.rooms), 1000);
 		}));
 
 		// Add message handlers
@@ -310,10 +312,8 @@ export function getClientSocketOrIo(profile_id: string | undefined) {
 type ChannelEmitOptions = {
 	/** The profile id of the user that is emitting the event (used to exclude the sender from recieving the event) */
 	profile_id?: string;
-	/** Determines if this channel should be marked as 'unseen' for users not viewing the channel (default: true) */
-	mark_unseen?: boolean;
-	/** Metadata that gets passed to activity event */
-	activity_data?: any;
+	/** Should this count as an event (default true). If true, then the `_last_event` field will be updated */
+	is_event?: boolean;
 };
 
 /**
@@ -338,41 +338,26 @@ export async function emitChannelEvent(channel_id: string, emitter: (room: Retur
 	const channel = await getChannel(channel_id);
 
 	// Emit the activity event to inactive channel
-	socket.to(_inactive(channel_id)).emit('general:activity', channel.domain, channel_id, options?.mark_unseen !== false);
+	socket.to(_inactive(channel_id)).emit('general:activity', channel.domain, channel_id, options?.is_event !== false);
 	// Emit the event to active channel
 	await emitter(socket.to(channel_id), channel);
 
-	// Code to mark channel as unseen
-	if (options?.mark_unseen !== false) {
-		// Remove all clients from inactive channel, then mark all as unseen
-		const sockets = await _socketServer.in(_inactive(channel_id)).fetchSockets();
-		const state_ids = sockets.map((s) => `app_states:${s.data.profile_id.split(':')[1]}`) as string[];
+	// WIP : Update client side acitivty handler, update client code to use last_event and last_acceessed, test to make sure everything still works, force domain refresh on every mount (throttle by ~5 secs)
+
+	// Code to update latest event tracker
+	if (options?.is_event !== false) {
+		/// Update latest event time
+		query(
+			sql.update<Channel>(channel_id, {
+				set: { _last_event: sql.$('time::now()') },
+			})
+		);
 
 		// Update locally
-		for (const socket of sockets) {
-			const profile_id = socket.data.profile_id;
-			const client = _clients[profile_id];
-			if (!client) continue;
-
-			if (!client.app.seen[channel.domain])
-				client.app.seen[channel.domain] = {};
-			client.app.seen[channel.domain][channel_id] = false;
-		}
-
-		// Update database
-		if (state_ids.length > 0) {
-			query(sql.update<RemoteAppState>(state_ids, {
-				content: {
-					seen: {
-						[id(channel.domain)]: {
-							[id(channel_id)]: false
-						}
-					}
-				},
-				merge: true,
-				return: 'NONE',
-			}));
-		}
+		const cache = getDomainChannelsCache();
+		const entry = cache._data[channel.domain]?.data?.find(x => x.id === channel_id);
+		if (entry)
+			entry._last_event = new Date().toISOString();
 
 		// Make all clients leave the inactive channel room
 		_socketServer.socketsLeave(_inactive(channel_id));

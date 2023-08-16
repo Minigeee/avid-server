@@ -14,6 +14,7 @@ import { Channel, ClientToServerEvents, Member, Profile, RemoteAppState, ServerT
 
 import { addChatHandlers } from './handlers/chat';
 import assert from 'assert';
+import { addRtcHandlers } from './handlers/rtc';
 
 
 /** Websockets app */
@@ -116,6 +117,7 @@ export async function makeSocketServer(server: HttpServer) {
 
 			current_domain: app?.domain || '',
 			current_channel: app?.channels?.[app?.domain || ''] || '',
+			current_room: null,
 		};
 
 		// Disconnect previous socket
@@ -169,10 +171,44 @@ export async function makeSocketServer(server: HttpServer) {
 			// Check if socket is still connected (i.e. user tried connecting twice and the second connection booted the first one off)
 			if (_clients[profile_id].socket.id !== socket.id) return;
 
-			// Mark profile as offline
-			query(sql.update<Profile>(profile_id, { set: { online: false } }));
+			// These updates do not need to be a transaction
+			const state_id = `app_states:${client.profile_id.split(':')[1]}`;
+			const ops = [
+				// Mark profile as offline
+				sql.update<Profile>(profile_id, { set: { online: false } }),
+				// Update last accessed on user leave
+				sql.update<RemoteAppState>(state_id, {
+					content: {
+						// Update last accessed time
+						last_accessed: sql.fn<RemoteAppState>(function () {
+							const domain_id = this.domain ? this.domain.toString().split(':')[1] : null;
+							const channel_id = domain_id && this.channels[domain_id] ? this.channels[domain_id].toString().split(':')[1] : null;
+							return domain_id && channel_id ? { [domain_id]: { [channel_id]: new Date() } } : {};
+						}),
+					},
+					merge: true,
+					return: 'NONE',
+				}),
+			];
 
-			// TODO : Update last accessed on user leave
+			// Code to disconnect user from rtc room if needed
+			if (client.current_room) {
+				// Remove participant from channel in db
+				ops.push(sql.update<Channel>(client.current_room, {
+					set: { 'data.participants': ['-=', client.profile_id] },
+					return: 'NONE',
+				}));
+
+				// Broadcast user leave event
+				const profile_id = client.profile_id;
+				getChannel(client.current_room).then((channel) => {
+					// Emit
+					_socketServer.to(channel.domain).to(`${channel.id}.rtc`).emit('rtc:user-left', channel.domain, channel.id, profile_id);
+				});
+			}
+
+			// Execute updates
+			query(sql.multi(ops));
 
 			// Notify in every domain the user is in that they left
 			socket.to(Object.keys(domains)).emit('general:user-left', profile_id);
@@ -283,6 +319,9 @@ export async function makeSocketServer(server: HttpServer) {
 
 		// Add message handlers
 		addChatHandlers(client);
+
+		// Add rtc handlers
+		addRtcHandlers(client);
 
 
 		// Join logging

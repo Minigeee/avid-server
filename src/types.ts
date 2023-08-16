@@ -18,6 +18,8 @@ export type Client = {
     current_domain: string;
     /** The channel the user is currently viewing */
     current_channel: string;
+    /** The rtc room the uesr is currently in */
+    current_room: string | null;
 };
 
 /** A type representing a log entry */

@@ -1,6 +1,6 @@
 import assert from 'assert';
 
-import { AggregatedReaction, Channel, ExpandedMember, Member, Message, Thread } from '@app/types';
+import { AggregatedReaction, Channel, ExpandedMember, Member, Message, RawMessage, Thread } from '@app/types';
 
 import config from '../config';
 import { StatusError } from '../utility/error';
@@ -94,7 +94,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				conds.pinned = true;
 
 			// Get messages and reactions
-			const results = await query<[unknown, unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Thread[], Message[]]>(sql.multi([
+			const results = await query<[unknown, unknown, unknown, (AggregatedReaction & { message: string })[], Member[], Thread[], (Omit<Message, 'reply_to'> & { reply_to?: Message })[]]>(sql.multi([
 				// Get messages
 				sql.let('$messages', sql.select<Message>('*', {
 					from: 'messages',
@@ -102,9 +102,10 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 					start: req.query.page !== undefined ? req.query.page * limit : undefined,
 					limit: limit,
 					sort: [{ field: 'created_at', order: 'DESC' }],
+					fetch: ['reply_to'],
 				})),
 				// Unique list of sender ids
-				sql.let('$senders', 'array::group([$messages.sender, array::flatten($messages.mentions.members)])'),
+				sql.let('$senders', 'array::group([$messages.sender, array::flatten($messages.mentions.members), $messages.reply_to.sender, array::flatten($messages.reply_to.mentions.members)])'),
 				// Unique list of threads
 				sql.let('$threads', 'array::distinct($messages.thread)'),
 				// List of reactions
@@ -204,7 +205,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			if (req.body.reply_to) {
 				ops = [
 					// Get message being replied to
-					sql.let('$reply_to', sql.select<Message>(['thread', 'message', 'sender'], { from: req.body.reply_to })),
+					sql.let('$reply_to', sql.select<Message>('*', { from: req.body.reply_to })),
 					// Get thread id
 					sql.let('$thread', sql.if({
 						cond: '$reply_to.thread != NONE',
@@ -223,6 +224,8 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 					}, {
 						body: sql.update<Thread>('($reply_to.thread)', { set: { last_active: sql.$('time::now()') } }),
 					}),
+					// Get replied to message
+					sql.select('*', { from: '$reply_to' }),
 				];
 
 				// Set thread
@@ -253,11 +256,15 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			);
 
 			// Post message
-			const results = await query<Message[]>(
+			const results = await query<Message[][]>(
 				sql.transaction(ops),
-				{ log: req.log }
+				{ complete: true, log: req.log }
 			);
 			assert(results && results.length > 0);
+
+			// Attach reply to method
+			const newMessage = (results.at(-1) as Message[])[0];
+			const rawMessage = req.body.reply_to ? { ...newMessage, reply_to: (results.at(-2) as Message[])[0] } : newMessage as RawMessage;
 
 			// TODO : Send notis to people pinged
 
@@ -265,7 +272,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			const sender_id = req.token.profile_id;
 			emitChannelEvent(req.body.channel, async (room, channel) => {
 				// Emit
-				room.emit('chat:message', results[0]);
+				room.emit('chat:message', rawMessage);
 
 				// Send ping
 				await ping(channel.domain, channel.id, {
@@ -275,7 +282,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 				});
 			}, { profile_id: req.token.profile_id });
 
-			return results[0];
+			return rawMessage;
 		},
 	},
 

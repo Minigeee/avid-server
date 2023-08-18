@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "npx nodemon ./src/server.ts",
     "build": "shx rm -rf dist && tsc",
-    "docker": "shx mkdir app && shx cp -r ../client/src/lib/types ./app && docker build . -t avid-app-api && shx rm -rf app",
+    "docker": "shx mkdir -p app && shx cp -r ../client/src/lib/types ./app && docker build . -t avid-app-api && shx rm -rf app",
     "start": "node dist/server/src/server.js"
   },
   "author": "",

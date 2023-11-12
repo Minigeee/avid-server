@@ -54,6 +54,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 				required: true,
 				location: 'body',
 				transform: (value) => isIn<ChannelTypes>(value, ['text', 'rtc', 'board']),
+				// transform: (value) => isIn<ChannelTypes>(value, ['text', 'rtc', 'board', 'calendar']),
 			},
 			data: {
 				required: false,
@@ -125,6 +126,8 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 					name: req.body.name || 'new-channel',
 					type: req.body.type,
 					data,
+					
+					_last_event: new Date().toISOString(),
 				}))
 			);
 

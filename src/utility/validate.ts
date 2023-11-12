@@ -108,3 +108,18 @@ export function asInt(str: string, options?: IsNumberOpts) {
 
 	return parseInt(str);
 }
+
+
+////////////////////////////////////////////////////////////
+export function asDate(value: string) {
+	if (!v.isISO8601(value))
+		throw new Error('must be a valid ISO-8601 date string');
+	return new Date(value);
+}
+
+////////////////////////////////////////////////////////////
+export function isDate(value: any) {
+	if (typeof value !== 'string' || !v.isISO8601(value))
+		throw new Error('must be a valid ISO-8601 date string');
+	return value;
+}

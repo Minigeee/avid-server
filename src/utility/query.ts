@@ -102,6 +102,9 @@ export type SqlReturn = 'NONE' | 'BEFORE' | 'AFTER' | 'DIFF';
 export type SqlContent<T> = (T extends object ? { [K in keyof T]?: SqlContent<T[K]> } :
 	T extends ReadonlyArray<infer A> ? (A | SqlVarExpr)[] : T) | SqlVarExpr;
 
+/** Match conditions object, used in `sql.match` */
+export type SqlMatchConditions<T> = { [K in keyof T]?: SqlType | SqlContent<T[K]> | [SqlOp, SqlType | SqlContent<T[K]>] };
+
 /** Relate statement options */
 export type SqlRelateOptions<T extends object> = {
 	/** Extra content that should be stored in relate edge */
@@ -247,7 +250,7 @@ export const sql = {
 
 	/** Match a set of expressions and join them with "and" or "or", where each object key and value are being compared for equality.
 	 * Other boolean operators can be used if object values are arrays, where [0] is the operator and [1] is the second operand */
-	match: <T extends object>(conds: { [K in keyof T]?: SqlType | SqlContent<T[K]> | [SqlOp, SqlType | SqlContent<T[K]>] }, join: '&&' | '||' = '&&') =>
+	match: <T extends object>(conds: SqlMatchConditions<T>, join: '&&' | '||' = '&&') =>
 		Object.entries(conds).map(([k, v]) => !Array.isArray(v) ? `${k}=${_json(v)}` : `${k} ${v[0]} ${_json(v[1])}`).join(join) + ' ',
 
 	/** Chain multiple statements */

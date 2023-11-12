@@ -26,7 +26,7 @@ const routes: ApiRoutes<`${string} /profiles${string}`> = {
 				sql.select([
 					'*',
 					sql.wrap(sql.select<Domain>(
-						['id', 'name', 'icon', 'time_created'],
+						['id', 'name', 'icon', 'quote', 'time_created'],
 						{ from: '->member_of->domains' }
 					), { alias: 'domains' }),
 				], { from: req.token.profile_id }),

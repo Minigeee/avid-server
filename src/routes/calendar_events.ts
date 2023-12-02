@@ -58,7 +58,16 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 
 			// Perform query
 			const results = await query<CalendarEvent[]>(
-				sql.select<CalendarEvent>('*', {
+				sql.select<CalendarEvent>([
+					'all_day',
+					'channel',
+					'color',
+					'end',
+					'id',
+					'start',
+					'time_created',
+					'title',
+				], {
 					from: 'calendar_events',
 					where: sql.match(match)
 				}),
@@ -119,6 +128,12 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 				{ log: req.log }
 			);
 			assert(results && results.length > 0);
+			
+			// Notify that calendar changed
+			const channel_id = req.body.channel;
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('calendar:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
 
 			return results[0];
 		},
@@ -194,9 +209,15 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 				}),
 				{ log: req.log }
 			);
-			assert(results);
+			assert(results && results.length > 0);
+			
+			// Notify that calendar changed
+			const channel_id = results[0].channel;
+			emitChannelEvent(channel_id, (room) => {
+				room.emit('calendar:activity', channel_id);
+			}, { profile_id: req.token.profile_id });
 
-			return results.length > 0 ? results[0] : null;
+			return results[0];
 		},
 	},
 
@@ -211,10 +232,19 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 		permissions: (req) => sql.return(hasPermission(req.token.profile_id, `${req.params.event_id}.channel`, 'can_manage_events')),
 		code: async (req, res) => {
 			// Delete event
-			await query(
-				sql.delete(req.params.event_id),
+			const results = await query<CalendarEvent[]>(
+				sql.delete(req.params.event_id, { return: 'BEFORE' }),
 				{ log: req.log }
 			);
+			assert(results);
+
+			// Notify that calendar changed
+			if (results.length > 0) {
+				const channel_id = results[0].channel;
+				emitChannelEvent(channel_id, (room) => {
+					room.emit('calendar:activity', channel_id);
+				}, { profile_id: req.token.profile_id });
+			}
 		},
 	},
 };

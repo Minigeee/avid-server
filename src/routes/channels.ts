@@ -53,8 +53,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 			type: {
 				required: true,
 				location: 'body',
-				transform: (value) => isIn<ChannelTypes>(value, ['text', 'rtc', 'board']),
-				// transform: (value) => isIn<ChannelTypes>(value, ['text', 'rtc', 'board', 'calendar']),
+				transform: (value) => isIn<ChannelTypes>(value, ['text', 'rtc', 'board', 'calendar']),
 			},
 			data: {
 				required: false,

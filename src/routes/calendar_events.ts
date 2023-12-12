@@ -6,7 +6,7 @@ import config from '../config';
 import { emitChannelEvent } from '../sockets';
 import { SqlMatchConditions, hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
-import { asDate, asRecord, isArray, isDate, isRecord, sanitizeHtml } from '../utility/validate';
+import { asDate, asRecord, isArray, isDate, isIn, isInt, isObject, isRecord, sanitizeHtml } from '../utility/validate';
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, pick, omitBy } from 'lodash';
@@ -22,6 +22,11 @@ function pickEvent(value: any) {
 		'end',
 		'start',
 		'title',
+
+		'repeat.interval',
+		'repeat.interval_type',
+		'repeat.end_of',
+		'repeat.week_repeat_days',
 	] as (keyof CalendarEvent)[]);
 }
 
@@ -47,14 +52,15 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 		permissions: (req) => sql.return(hasPermission(req.token.profile_id, req.query.channel, 'can_view')),
 		code: async (req, res) => {
 			// Set up match conditions
-			const match: SqlMatchConditions<CalendarEvent> = {
+			let match = sql.match<CalendarEvent>({
 				channel: req.query.channel,
-			};
+			});
 
+			// WIP : Correctly fetch repeated events, correctly display events within calendar UI
 			if (req.query.from)
-				match.end = ['>', req.query.from.toISOString()];
+				match += `&& (end > "${req.query.from.toISOString()}" || repeat.end_on > "${req.query.from.toISOString()}")`;
 			if (req.query.to)
-				match.start = ['<', req.query.to.toISOString()];
+				match += `&& start < "${req.query.to.toISOString()}"`;
 
 			// Perform query
 			const results = await query<CalendarEvent[]>(
@@ -67,9 +73,10 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 					'start',
 					'time_created',
 					'title',
+					'repeat',
 				], {
 					from: 'calendar_events',
-					where: sql.match(match)
+					where: match + ' ',
 				}),
 				{ log: req.log }
 			);
@@ -103,6 +110,28 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 				location: 'body',
 				required: false,
 				transform: isDate,
+			},
+			repeat: {
+				location: 'body',
+				required: false,
+				transform: (value) => isObject<CalendarEvent['repeat']>(value, {
+					interval: {
+						required: true,
+						transform: (value) => isInt(value, { min: 1 }),
+					},
+					interval_type: {
+						required: true,
+						transform: (value) => isIn(value, ['day', 'week', 'month', 'year']),
+					},
+					end_on: {
+						required: false,
+						transform: isDate,
+					},
+					week_repeat_days: {
+						required: false,
+						transform: (value) => isArray(value, (elem) => isInt(elem, { min: 0, max: 6 }), { maxlen: 7 }),
+					},
+				}),
 			},
 			start: {
 				location: 'body',
@@ -194,6 +223,28 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 				location: 'body',
 				required: false,
 			},
+			repeat: {
+				location: 'body',
+				required: false,
+				transform: (value) => isObject<Partial<CalendarEvent['repeat']>>(value, {
+					interval: {
+						required: false,
+						transform: (value) => isInt(value, { min: 1 }),
+					},
+					interval_type: {
+						required: false,
+						transform: (value) => isIn(value, ['day', 'week', 'month', 'year']),
+					},
+					end_on: {
+						required: false,
+						transform: isDate,
+					},
+					week_repeat_days: {
+						required: false,
+						transform: (value) => isArray(value, (elem) => isInt(elem, { min: 0, max: 6 }), { maxlen: 7 }),
+					},
+				}),
+			}
 		},
 		permissions: (req) => sql.return(hasPermission(req.token.profile_id, `${req.params.event_id}.channel`, 'can_manage_events')),
 		code: async (req, res) => {

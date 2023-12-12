@@ -10,11 +10,14 @@ import wrapper from './utility/wrapper';
 import { log } from './logs';
 import { Client, Socket } from './types';
 
-import { Channel, ClientToServerEvents, Member, Profile, RemoteAppState, ServerToClientEvents } from '@app/types';
+import { Channel, ClientToServerEvents, DeepPartial, Member, Profile, RemoteAppState, ServerToClientEvents } from '@app/types';
 
 import { addChatHandlers } from './handlers/chat';
-import assert from 'assert';
 import { addRtcHandlers } from './handlers/rtc';
+import { isBool, isRecord } from './utility/validate';
+
+import assert from 'assert';
+import { pick } from 'lodash';
 
 
 /** Websockets app */
@@ -23,6 +26,29 @@ let _socketServer: SocketServer<ClientToServerEvents, ServerToClientEvents>;
 /** A map of profile ids to client objects */
 const _clients: Record<string, Client> = {};
 
+
+////////////////////////////////////////////////////////////
+function transformObject(value: any, transform: (k: string, v: any) => [string, any]) {
+	if (typeof value !== 'object')
+		throw new Error(`must be an object`);
+
+	for (const [k, v] of Object.entries(value)) {
+		try {
+			const entry = transform(k, v);
+			if (k !== entry[0]) {
+				delete value[k];
+				value[entry[0]] = entry[1];
+			}
+			else if (v !== entry[1])
+				value[k] = entry[1];
+		}
+		catch (err: any) {
+			throw new Error(`[${k}] ${err.message}`);
+		}
+	}
+
+	return value;
+}
 
 ///////////////////////////////////////////////////////////
 function _inactive(channel_id: string) {
@@ -238,7 +264,7 @@ export async function makeSocketServer(server: HttpServer) {
 							channels: { [id(domain_id)]: channel_id },
 							// Update last accessed time
 							last_accessed: sql.fn<RemoteAppState>(function () {
-								const domain_id = this.domain ? this.domain.toString().split(':')[1] : null;
+								const domain_id: string | null = this.domain ? this.domain.toString().split(':')[1] : null;
 								const channel_id = domain_id && this.channels[domain_id] ? this.channels[domain_id].toString().split(':')[1] : null;
 								return domain_id && channel_id ? { [domain_id]: { [channel_id]: new Date() } } : {};
 							}),
@@ -315,6 +341,41 @@ export async function makeSocketServer(server: HttpServer) {
 			}
 
 			// setTimeout(() => console.log(socket.rooms), 1000);
+		}));
+
+		// Called when a client wants to update their app state
+		socket.on('general:update-app-state', wrapper.event(async (state: DeepPartial<RemoteAppState>) => {
+			// Validation/transform
+			if (state.last_accessed) {
+				state.last_accessed = transformObject(state.last_accessed, (k, v) => ([
+					id(k),
+					transformObject(v, (k, v) => ([id(k), isBool(v)]))
+				]));
+			}
+
+			if (state.pings)
+				state.pings = transformObject(state.pings, (k, v) => ([id(k), v]));
+
+			if (state.right_panel_opened)
+				state.right_panel_opened = isBool(state.right_panel_opened);
+
+			if (state.board_states)
+				state.board_states = transformObject(state.board_states, (k, v) => ([id(k), v]));
+
+			// Pick only needed states
+			state = pick(state, [
+				'last_accessed',
+				'pings',
+				'right_panel_opened',
+				'board_states',
+			]);
+
+			// Update state
+			const state_id = `app_states:${client.profile_id.split(':')[1]}`;
+			await query<any[]>(sql.update(state_id, {
+				content: state,
+				merge: true,
+			}));
 		}));
 
 		// Add message handlers

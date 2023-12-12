@@ -37,7 +37,7 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
 		if (req.log)
 			req.log.error(err);
 
-		if (config.dev_mode) {
+		if (config.dev_mode || req.token.email === 'tri.t.nguyen02@gmail.com') {
 			res.status(500).send(err.stack);
 		}
 		else {

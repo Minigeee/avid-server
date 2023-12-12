@@ -33,6 +33,39 @@ export function sanitizeHtml(value: string) {
 
 
 ////////////////////////////////////////////////////////////
+type SchemaField<T, K extends keyof T> = { required: undefined extends T[K] ? false : true, transform: (value: any) => T[K] };
+export function isObject<T>(value: any, schema: { [K in keyof T]-?: SchemaField<T, K> }) {
+	const entries: [string, SchemaField<T, any>][] = Object.entries(schema);
+
+	// Check if it is object
+	if (typeof value !== 'object')
+		throw new Error(`must be an object with fields ${entries.filter(([k, v]) => v.required).map(([k, v]) => `\`${k}\``).join(', ')}`);
+
+	const result: any = {};
+
+	// Check all schema entries
+	for (const [k, v] of entries) {
+		// Check if the field is present
+		if (v.required && value[k] === undefined)
+			throw new Error(`\`${k}\` is a required field`);
+
+		// Check if it is present
+		else if (value[k] !== undefined) {
+			// Do check
+			try {
+				result[k] = v.transform(value[k]);
+			}
+			catch (err: any) {
+				throw new Error(`\`${k}\` ${err.message}`);
+			}
+		}
+	}
+
+	return result;
+}
+
+
+////////////////////////////////////////////////////////////
 export function isArray<T>(value: any, transform: (value: any) => T, options?: IsArrayOpts) {
 	if (!Array.isArray(value) || (options?.minlen !== undefined && value.length < options.minlen) || (options?.maxlen !== undefined && value.length > options.maxlen)) {
 		const hasMin = options?.minlen !== undefined;
@@ -107,6 +140,17 @@ export function asInt(str: string, options?: IsNumberOpts) {
 	}
 
 	return parseInt(str);
+}
+
+////////////////////////////////////////////////////////////
+export function isInt(value: any, options?: IsNumberOpts) {
+	if (typeof value !== 'number' || (options?.min !== undefined && value < options.min) || (options?.max !== undefined && value > options.max)) {
+		const hasMin = options?.min !== undefined;
+		const hasMax = options?.max !== undefined;
+		throw new Error(`must be an integer ${hasMin ? `>=${options.min}${hasMax ? ' and ' : ''}` : ''}${hasMax ? `<=${options.max}` : ''}`);
+	}
+
+	return value;
 }
 
 

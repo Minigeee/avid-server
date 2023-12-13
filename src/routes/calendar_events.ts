@@ -25,7 +25,7 @@ function pickEvent(value: any) {
 
 		'repeat.interval',
 		'repeat.interval_type',
-		'repeat.end_of',
+		'repeat.end_on',
 		'repeat.week_repeat_days',
 	] as (keyof CalendarEvent)[]);
 }
@@ -241,7 +241,7 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 					},
 					week_repeat_days: {
 						required: false,
-						transform: (value) => isArray(value, (elem) => isInt(elem, { min: 0, max: 6 }), { maxlen: 7 }),
+						transform: (value) => value ? isArray(value, (elem) => isInt(elem, { min: 0, max: 6 }), { maxlen: 7 }) : undefined,
 					},
 				}),
 			}
@@ -252,6 +252,8 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
 			const event = pickEvent(req.body);
 			if (event.channel)
 				delete event.channel;
+			if (req.body.repeat === null)
+				event.repeat = null;
 
 			// Update event
 			const results = await query<CalendarEvent[]>(

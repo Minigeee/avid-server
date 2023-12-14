@@ -11,14 +11,14 @@ import { asRecord, isArray, isRecord } from '../utility/validate';
 const TEMPLATES = {
 	default: () => ([
 		sql.let('$groups', '[]'),
-		sql.let('$group', sql.create<ChannelGroup>('channel_groups', {
+		sql.let('$group', sql.single(sql.create<ChannelGroup>('channel_groups', {
 			domain: sql.$('$domain.id'),
 			name: 'Main',
 			channels: sql.$('[]'),
-		})),
+		}))),
 		sql.update<ChannelGroup>('($group.id)', {
 			set: {
-				channels: sql.$('[' + sql.wrap(
+				channels: sql.$(sql.wrap(
 					sql.create<Channel>('channels', {
 						domain: sql.$('$domain.id'),
 						inherit: sql.$('$group.id'),
@@ -26,7 +26,7 @@ const TEMPLATES = {
 						type: 'text',
 					}),
 					{ append: '.id' }
-				) + ']'),
+				)),
 			},
 		}),
 		sql.create<AclEntry>('acl', {
@@ -37,6 +37,7 @@ const TEMPLATES = {
 				'can_view',
 				'can_send_messages',
 				'can_send_attachments',
+				'can_send_reactions',
 				'can_broadcast_audio',
 				'can_broadcast_video',
 			],
@@ -57,26 +58,26 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
 		// TODO : Limit on how many domains a user can own
 		code: async (req, res) => {
 			// Create new domain with the specified name and make user join
-			const results = await query<Domain[]>(sql.transaction([
+			const results = await query<Domain>(sql.transaction([
 				// Create domain
-				sql.let('$domain', sql.create<Domain>('domains', {
+				sql.let('$domain', sql.single(sql.create<Domain>('domains', {
 					name: req.body.name,
 					groups: [],
-				})),
+				}))),
 				// Create everyone role
-				sql.let('$role', sql.create<Role>('roles', {
+				sql.let('$role', sql.single(sql.create<Role>('roles', {
 					domain: sql.$('$domain.id'),
 					label: 'everyone',
-				})),
+				}))),
 				// Create starting template configuration
 				...TEMPLATES.default(),
 				// Add starting config to domain
-				sql.let('$domain', sql.update<Domain>('$domain', {
+				sql.let('$domain', sql.single(sql.update<Domain>('$domain', {
 					set: {
 						_default_role: sql.$('$role.id'),
 						groups: sql.$('$groups'),
 					},
-				})),
+				}))),
 				// Add member to domain as owner/admin
 				sql.relate<Member>(req.token.profile_id, 'member_of', '$domain', {
 					content: {
@@ -89,9 +90,9 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
 				// Return id of domain
 				sql.return('$domain'),
 			]), { log: req.log });
-			assert(results && results.length > 0);
+			assert(results);
 
-			return results[0];
+			return results;
 		},
 	},
 
@@ -305,19 +306,19 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
 			const domain_id = asRecord('domains', req.params.join_id);
 
 			// Try adding member
-			const results = await query<Domain[]>(sql.multi([
-				sql.let('$domain', sql.select<Domain>(['id', 'name', 'icon', '_default_role'], { from: domain_id })),
+			const results = await query<Domain>(sql.multi([
+				sql.let('$domain', sql.single(sql.select<Domain>(['id', 'name', 'icon', '_default_role'], { from: domain_id }))),
 				sql.relate<Member>(req.token.profile_id, 'member_of', '$domain', {
 					content: {
 						alias: sql.$(`${req.token.profile_id}.username`),
 						roles: [sql.$('$domain._default_role')],
 					}
 				}),
-				sql.select('*', { from: '$domain' }),
+				sql.return('$domain'),
 			]), { log: req.log });
-			assert(results && results.length > 0);
+			assert(results);
 
-			return results[0];
+			return results;
 		},
 	},
 };

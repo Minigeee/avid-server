@@ -205,17 +205,17 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 			if (req.body.reply_to) {
 				ops = [
 					// Get message being replied to
-					sql.let('$reply_to', sql.select<Message>('*', { from: req.body.reply_to })),
+					sql.let('$reply_to', sql.single(sql.select<Message>('*', { from: req.body.reply_to }))),
 					// Get thread id
 					sql.let('$thread', sql.if({
 						cond: '$reply_to.thread != NONE',
 						body: '$reply_to.thread',
 					}, {
-						body: sql.create<Thread>('threads', {
+						body: sql.single(sql.create<Thread>('threads', {
 							channel: req.body.channel,
 							name: sql.$('string::slice($reply_to.message, 0, 64)'),
 							starters: sql.$(`[${req.token.profile_id}, $reply_to.sender]`),
-						}),
+						})),
 					})),
 					// Update replied to's thread value
 					sql.if({

@@ -96,7 +96,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 				const opts = req.body.options as ChannelOptions<'board'>;
 
 				ops.push(
-					sql.let('$board', sql.create<Board>('boards', {
+					sql.let('$board', sql.single(sql.create<Board>('boards', {
 						domain: req.body.domain,
 						inherit: req.body.group,
 						prefix: opts.prefix,
@@ -106,7 +106,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 			
 						_task_counter: 0,
 						_id_counter: 1,
-					}, ['id']))
+					}, ['id'])))
 				);
 
 				data.board = sql.$('$board.id');
@@ -119,7 +119,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 
 			// Create channel
 			ops.push(
-				sql.let('$channel', sql.create<Channel>('channels', {
+				sql.let('$channel', sql.single(sql.create<Channel>('channels', {
 					domain: req.body.domain,
 					inherit: req.body.group,
 					name: req.body.name || 'new-channel',
@@ -127,7 +127,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
 					data,
 					
 					_last_event: new Date().toISOString(),
-				}))
+				})))
 			);
 
 			// Board

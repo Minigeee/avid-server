@@ -204,15 +204,11 @@ export async function makeSocketServer(server: HttpServer) {
 				sql.update<Profile>(profile_id, { set: { online: false } }),
 				// Update last accessed on user leave
 				sql.update<RemoteAppState>(state_id, {
-					content: {
-						// Update last accessed time
-						last_accessed: sql.fn<RemoteAppState>(function () {
-							const domain_id = this.domain ? this.domain.toString().split(':')[1] : null;
-							const channel_id = domain_id && this.channels[domain_id] ? this.channels[domain_id].toString().split(':')[1] : null;
-							return domain_id && channel_id ? { [domain_id]: { [channel_id]: new Date() } } : {};
-						}),
-					},
-					merge: true,
+					patch: [{
+						op: 'add',
+						path: `last_accessed/${id(client.current_domain)}/${id(client.current_channel)}`,
+						value: sql.$('time::now()'),
+					}],
 					return: 'NONE',
 				}),
 			];
@@ -258,22 +254,28 @@ export async function makeSocketServer(server: HttpServer) {
 				sql.if({
 					cond: '$allowed = true',
 					body: sql.update<RemoteAppState>(state_id, {
-						content: {
-							// Update values
-							domain: domain_id,
-							channels: { [id(domain_id)]: channel_id },
-							// Update last accessed time
-							last_accessed: sql.fn<RemoteAppState>(function () {
-								const domain_id: string | null = this.domain ? this.domain.toString().split(':')[1] : null;
-								const channel_id = domain_id && this.channels[domain_id] ? this.channels[domain_id].toString().split(':')[1] : null;
-								return domain_id && channel_id ? { [domain_id]: { [channel_id]: new Date() } } : {};
-							}),
-							// Reset pings
-							pings: {
-								[id(channel_id)]: 0,
+						patch: [
+							{
+								op: 'add',
+								path: 'domain',
+								value: domain_id,
 							},
-						},
-						merge: true,
+							{
+								op: 'add',
+								path: `channels/${id(domain_id)}`,
+								value: channel_id,
+							},
+							{
+								op: 'add',
+								path: `last_accessed/${id(domain_id)}/${id(channel_id)}`,
+								value: sql.$('time::now()'),
+							},
+							{
+								op: 'add',
+								path: `pings/${id(channel_id)}`,
+								value: 0,
+							},
+						],
 						return: 'NONE',
 					}),
 				}),

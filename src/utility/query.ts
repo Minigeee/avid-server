@@ -33,10 +33,11 @@ export async function query<T>(sql: string, options?: QueryOptions): Promise<T |
 	}));
 
 	// Return if all results are ok
-	for (const result of results) {
-		if (result.status === 'ERR')
-			// Error occurred
-			throw new Error(result.detail);
+	const error = results.find(x => x.status === 'ERR');
+	if (error) {
+		if (config.dev_mode)
+			console.log(sql.split(/;\s*/).join(';\n'));
+		throw new Error(error.result?.toString());
 	}
 	
 	// Return results
@@ -77,11 +78,29 @@ type _NestedPaths<T> = T extends string | number | boolean | Date | RegExp | Buf
 		[K, ...([] | _NestedPaths<T[K]>)];
 	}[keyof T] : never;
 
+type _NestedPathsWithIndex<T> = T extends string | number | boolean | Date | RegExp | Buffer | Uint8Array | ((...args: any[]) => any) | {
+	_bsontype: string;
+} ? never :
+	T extends ReadonlyArray<infer A> ? [number | '-', ...([] | _NestedPathsWithIndex<A>)] :
+	T extends Map<string, any> ? [string] :
+	T extends object ? {
+		[K in keyof Required<T>]:
+		T[K] extends T ? [K] : T extends T[K] ? [K] :
+		[K, ...([] | _NestedPathsWithIndex<T[K]>)];
+	}[keyof T] : never;
+
 type Join<T extends unknown[], D extends string> =
 	T extends [] ? '' : T extends [string | number] ? `${T[0]}` : T extends [string | number, ...infer R] ? `${T[0]}${D}${Join<R, D>}` : string;
 
 /** All selectable fields up to a certain recursion level */
 export type Selectables<T> = Join<_NestedPaths<T>, '.'>;
+
+
+/** Operations for json patch */
+export type JsonPatchOps = 'add' | 'remove' | 'replace' | 'copy' | 'move';
+
+/** All selectable fields up to a certain recursion level with indices for arrays */
+export type JsonPaths<T> = Join<_NestedPathsWithIndex<T>, '/'>;
 
 
 /** Sql var accessor */
@@ -169,8 +188,18 @@ type _SqlUpdateSetOptions<T extends object> = {
 		(SqlContent<T[K]> | ['=' | '+=' | '-=', SqlContent<T[K]>]) : any };
 } & _SqlUpdateBaseOptions<T>;
 
+type _SqlUpdatePatchOptions<T extends object> = {
+	/** Data that should be set using JSON patch operations */
+	patch: {
+		op: JsonPatchOps;
+		path: JsonPaths<T> | SqlVarExpr;
+		from?: JsonPaths<T> | SqlVarExpr;
+		value?: SqlContent<any>;
+	}[];
+} & _SqlUpdateBaseOptions<T>;
+
 /** Update statement options */
-export type SqlUpdateOptions<T extends object> = _SqlUpdateContentOptions<T> | _SqlUpdateSetOptions<T>;
+export type SqlUpdateOptions<T extends object> = _SqlUpdateContentOptions<T> | _SqlUpdateSetOptions<T> | _SqlUpdatePatchOptions<T>;
 
 /** Insert statement options */
 type SqlInsertOptions<T extends object> = {
@@ -260,7 +289,10 @@ export const sql = {
 	or: (exprs: string[]) => exprs.map(x => `(${x.trim()})`).join('||') + ' ',
 
 	/** Return statement */
-	return: (expr: string) => `RETURN ${expr} `,
+	return: (expr: string) => `RETURN ${expr.trim()} `,
+
+	/** Select single element from array */
+	single: (expr: string, options?: { index?: number, append?: string }) => `(${expr.trim()})[${options?.index || 0}]${options?.append || ''} `,
 
 	/** Wrap statement in parantheses */
 	wrap: (expr: string, options?: { alias?: string, append?: string }) =>
@@ -389,6 +421,15 @@ export const sql = {
 			const set = exprs.join(',');
 
 			q += `SET ${set} `;
+		}
+		else if ((options as _SqlUpdatePatchOptions<T>).patch) {
+			const ops = (options as _SqlUpdatePatchOptions<T>).patch;
+			q += `PATCH [${ops.map(op => {
+				const path = _json(op.path);
+				const from = op.from ? _json(op.from) : undefined;
+				const value = op.value !== undefined ? _json(op.value) : undefined;
+				return `{"op":"${op.op}","path":${path}${from ? `,"from":${from}` : ''}${value !== undefined ? `,"value":${value}` : ''}}`;
+			}).join(',')}] `;
 		}
 		else {
 			// CONTENT or MERGE should be used

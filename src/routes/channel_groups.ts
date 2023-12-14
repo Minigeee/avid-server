@@ -51,11 +51,11 @@ const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
 		code: async (req, res) => {
 			// List of operations
 			const ops = [
-				sql.let('$group', sql.create<ChannelGroup>('channel_groups', {
+				sql.let('$group', sql.single(sql.create<ChannelGroup>('channel_groups', {
 					domain: req.body.domain,
 					name: req.body.name,
 					channels: [],
-				})),
+				}))),
 				sql.return('$group'),
 			];
 

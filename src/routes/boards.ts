@@ -83,7 +83,7 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 				sql.update<Board>(req.params.board_id, {
 					set: {
 						collections: ['+=', {
-							id: sql.$('_id_counter'),
+							id: sql.$('type::string(_id_counter)'),
 							name: req.body.name,
 							description: req.body.description,
 							start_date: req.body.start_date,

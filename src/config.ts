@@ -32,7 +32,7 @@ const config = {
 		/** Mode the logger should operate under */
 		mode: dev_mode ? 'local' : 'remote',
 		/** Indicates if log files are enabled */
-		log_file: !dev_mode,
+		log_file: true,
 		/** The log levels at or above which log entry ids should be assigned */
 		id_level: 2, // "info"
 		/** The log levels at or above which should be saved to remote database */

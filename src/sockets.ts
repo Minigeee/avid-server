@@ -420,17 +420,26 @@ export async function makeSocketServer(server: HttpServer) {
         if (state.right_panel_opened)
           state.right_panel_opened = isBool(state.right_panel_opened);
 
-        if (state.board_states)
+        if (state.chat_states) {
+          state.chat_states = transformObject(state.chat_states, (k, v) => [
+            id(k),
+            v,
+          ]);
+        }
+
+        if (state.board_states) {
           state.board_states = transformObject(state.board_states, (k, v) => [
             id(k),
             v,
           ]);
+        }
 
         // Pick only needed states
         state = pick(state, [
           'last_accessed',
           'pings',
           'right_panel_opened',
+          'chat_states',
           'board_states',
         ]);
 

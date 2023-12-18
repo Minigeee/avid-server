@@ -33,7 +33,7 @@ type SchemaField<T, K extends keyof T> = {
 };
 export function isObject<T>(
   value: any,
-  schema: { [K in keyof T]-?: SchemaField<T, K> },
+  schema: { [K in keyof T]-?: SchemaField<T, K> | null },
 ) {
   const entries: [string, SchemaField<T, any>][] = Object.entries(schema);
 
@@ -50,6 +50,9 @@ export function isObject<T>(
 
   // Check all schema entries
   for (const [k, v] of entries) {
+    // Skip if no validators provided
+    if (!v) continue;
+
     // Check if the field is present
     if (v.required && value[k] === undefined)
       throw new Error(`\`${k}\` is a required field`);

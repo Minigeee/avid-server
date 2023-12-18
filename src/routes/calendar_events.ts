@@ -155,6 +155,7 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
                   maxlen: 7,
                 }),
             },
+            overrides: null,
           }),
       },
       start: {
@@ -292,6 +293,7 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
                     })
                   : undefined,
             },
+            overrides: null,
           }),
       },
     },
@@ -367,6 +369,107 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
           { profile_id: req.token.profile_id },
         );
       }
+    },
+  },
+
+  'POST /calendar_events/:event_id/overrides': {
+    validate: {
+      event_id: {
+        location: 'params',
+        required: true,
+        transform: (value) => asRecord('calendar_events', value),
+      },
+      mode: {
+        location: 'body',
+        required: true,
+        transform: (value) => isIn(value, ['edit', 'delete']),
+      },
+      date: {
+        location: 'body', 
+        required: true,
+        transform: isDate,
+      },
+      all_day: {
+        location: 'body',
+        required: false,
+      },
+      color: {
+        location: 'body',
+        required: false,
+      },
+      description: {
+        location: 'body',
+        required: false,
+        transform: sanitizeHtml,
+      },
+      end: {
+        location: 'body',
+        required: false,
+        transform: isDate,
+      },
+      start: {
+        location: 'body',
+        required: false,
+        transform: isDate,
+      },
+      title: {
+        location: 'body',
+        required: false,
+      },
+    },
+    permissions: (req) =>
+      sql.return(
+        hasPermission(
+          req.token.profile_id,
+          `${req.params.event_id}.channel`,
+          'can_manage_events',
+        ),
+      ),
+    code: async (req, res) => {
+      // List of operations
+      const ops = [
+        // Add date to overrides list
+        sql.let(
+          '$event',
+          sql.single(
+            sql.update<CalendarEvent>(req.params.event_id, {
+              set: { 'repeat.overrides': ['+=', req.body.date] },
+            }),
+          ),
+        ),
+      ];
+
+      // Diff operations based on mode
+      if (req.body.mode === 'edit') {
+        // Create new event
+        ops.push(
+          sql.let(
+            '$newEvent',
+            sql.single(
+              sql.create<CalendarEvent>('calendar_events', {
+                all_day: sql.$('$event.all_day'),
+                channel: sql.$('$event.channel'),
+                color: sql.$('$event.color'),
+                description: sql.$('$event.description'),
+                title: sql.$('$event.title'),
+                start: req.body.start,
+                end: req.body.end,
+              }),
+            ),
+          ),
+        );
+        ops.push(sql.return('[$event, $newEvent]'));
+      } else {
+        ops.push(sql.return('[$event, NULL]'));
+      }
+
+      // Perform transaction
+      const results = await query<[CalendarEvent, CalendarEvent | null]>(
+        sql.transaction(ops),
+      );
+      assert(results && results.length > 0);
+
+      return { base: results[0], new: results[1] || undefined };
     },
   },
 };

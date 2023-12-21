@@ -341,12 +341,10 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
           isArray(value, (value) => {
             if (
               !value ||
-              typeof value !== 'object' ||
-              !value.label ||
-              typeof value.label !== 'string'
+              typeof value !== 'object'
             )
               throw new Error(
-                'must be a label object with a string `label` fields',
+                'must be a label object with optional `label` and `color` fields',
               );
             if (!value.id || typeof value.id !== 'string')
               throw new Error(
@@ -369,8 +367,10 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
         )}`,
       ),
     code: async (req, res) => {
-      const add = req.body.add || [];
-      const update = req.body.update || [];
+      // Pick only label values
+      const add = (req.body.add || []).map(x => pick(x, ['color', 'label']));
+      const update = (req.body.update || []).map(x => pick(x, ['id', 'color', 'label']));
+
 
       const results = await query<Board[]>(
         sql.update<Board>(req.params.board_id, {

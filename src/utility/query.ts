@@ -299,13 +299,13 @@ type SqlInsertOptions<T extends object> = {
   on_conflict?: _SqlUpdateSetOptions<T>['set'];
 };
 
-function _json(x: any, doubleBackslash: boolean = false): string {
+function _json(x: any): string {
   const type = typeof x;
 
   if (type === 'string')
     return `"${x.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
   else if (Array.isArray(x))
-    return `[${x.map((x) => _json(x, doubleBackslash)).join(',')}]`;
+    return `[${x.map((x) => _json(x)).join(',')}]`;
   else if (type === 'object') {
     if (x === null) return 'null';
     else if (x.__esc__ !== undefined) return x.__esc__;
@@ -313,7 +313,7 @@ function _json(x: any, doubleBackslash: boolean = false): string {
     else {
       const rows: string[] = [];
       for (const [k, v] of Object.entries(x)) {
-        if (v !== undefined) rows.push(`${k}:${_json(v, doubleBackslash)}`);
+        if (v !== undefined) rows.push(`${k}:${_json(v)}`);
       }
       return `{${rows.join(',')}}`;
     }
@@ -357,7 +357,7 @@ export const sql = {
 
     // Replace hardcodes
     for (const [k, v] of Object.entries(hardcode || {}))
-      body = _replace(body, k, _json(v, false));
+      body = _replace(body, k, _json(v));
 
     return {
       __esc__: `function(${params.map((x) => `$${x}`).join(', ')}) {${body}}`,

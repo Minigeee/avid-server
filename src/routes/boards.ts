@@ -5,7 +5,7 @@ import { Board, Task, TaskCollection } from '@app/types';
 import { hasPermission, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { emitChannelEvent } from '../sockets';
-import { asRecord, isArray, sanitizeHtml } from '../utility/validate';
+import { asRecord, isArray, isDate, sanitizeHtml } from '../utility/validate';
 
 import { pick } from 'lodash';
 
@@ -172,8 +172,8 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
         location: 'body',
         transform: sanitizeHtml,
       },
-      start_date: { required: false, location: 'body' },
-      end_date: { required: false, location: 'body' },
+      start_date: { required: false, location: 'body', transform: isDate },
+      end_date: { required: false, location: 'body', transform: isDate },
     },
     permissions: (req) =>
       sql.return(
@@ -213,7 +213,18 @@ const routes: ApiRoutes<`${string} /boards${string}`> = {
 
                 return this.collections;
               },
-              { collection_id, collection },
+              {
+                collection_id,
+                collection: {
+                  ...collection,
+                  start_date: collection.start_date
+                    ? sql.$(`new Date("${collection.start_date}")`)
+                    : undefined,
+                  end_date: collection.end_date
+                    ? sql.$(`new Date("${collection.end_date}")`)
+                    : undefined,
+                },
+              },
             ),
           },
           return: ['channel', 'collections'],

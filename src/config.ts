@@ -92,12 +92,12 @@ const config = {
         id: 'backlog',
         name: 'Backlog',
         description:
-          'A backlog is typically used as a collection of tasks, features, or issues ' +
+          '<p>A backlog is typically used as a collection of tasks, features, or issues ' +
           'that have not yet been completed. The backlog can be used in many different ways, but ' +
           'the most common way is to pull tasks from the backlog into a separate collection of tasks ' +
           'that is worked on during the current period. This process can be started ' +
           'by creating a new "objective" collection, define your team\'s current focus and priorities in its description, ' +
-          'then move any task that belongs within that objective into it.',
+          'then move any task that belongs within that objective into it.</p>',
       },
       /** All collection */
       all_collection: {

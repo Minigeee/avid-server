@@ -30,13 +30,11 @@ const TEMPLATES = {
     sql.let('$groups', '[]'),
     sql.let(
       '$group',
-      sql.single(
         sql.create<ChannelGroup>('channel_groups', {
           domain: sql.$('$domain.id'),
           name: 'Main',
           channels: sql.$('[]'),
-        }),
-      ),
+        }, { single: true }),
     ),
     sql.update<ChannelGroup>('($group.id)', {
       set: {
@@ -86,36 +84,31 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
           // Create domain
           sql.let(
             '$domain',
-            sql.single(
               sql.create<Domain>('domains', {
                 name: req.body.name,
                 groups: [],
-              }),
-            ),
+              }, { single: true }),
           ),
           // Create everyone role
           sql.let(
             '$role',
-            sql.single(
               sql.create<Role>('roles', {
                 domain: sql.$('$domain.id'),
                 label: 'everyone',
-              }),
-            ),
+              }, { single: true }),
           ),
           // Create starting template configuration
           ...TEMPLATES.default(),
           // Add starting config to domain
           sql.let(
             '$domain',
-            sql.single(
               sql.update<Domain>('$domain', {
                 set: {
                   _default_role: sql.$('$role.id'),
                   groups: sql.$('$groups'),
                 },
+                single: true,
               }),
-            ),
           ),
           // Add member to domain as owner/admin
           sql.relate<Member>(req.token.profile_id, 'member_of', '$domain', {
@@ -393,11 +386,10 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
         sql.multi([
           sql.let(
             '$domain',
-            sql.single(
               sql.select<Domain>(['id', 'name', 'icon', '_default_role'], {
                 from: domain_id,
+                single: true,
               }),
-            ),
           ),
           sql.relate<Member>(req.token.profile_id, 'member_of', '$domain', {
             content: {

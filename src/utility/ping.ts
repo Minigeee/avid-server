@@ -14,18 +14,22 @@ export type PingOptions = {
 };
 
 /**
- * Ping the given members and roles in the given channel
+ * Ping the given members and roles in the given channel (normal or private)
  *
- * @param domain_id The id of the domain where the ping occurred
+ * @param domain_id The id of the domain where the ping occurred. If pinging a private channel, this can be `undefined`.
  * @param channel_id The id of the channel where the ping occurred
  * @param options Ping options
  */
 export async function ping(
-  domain_id: string,
+  domain_id: string | undefined,
   channel_id: string,
   options: PingOptions,
 ) {
   if (!options.member_ids?.length && !options.role_ids?.length) return;
+  assert(domain_id || channel_id.startsWith('private_channels'));
+
+  // Check if roles are being pinged (need to be in a domain)
+  const hasRoleMentions = options.role_ids?.length && domain_id !== undefined;
 
   // Unique member ids
   const member_ids = options.member_ids
@@ -37,7 +41,7 @@ export async function ping(
     // List of member ids to ping
     sql.let(
       '$members',
-      options.role_ids?.length
+      hasRoleMentions
         ? member_ids.length > 0
           ? `array::group($members_from_roles, ${member_ids.join(',')})`
           : '$members_from_roles'
@@ -56,21 +60,29 @@ export async function ping(
     sql.update<RemoteAppState>('$app_states', {
       // Update only users that are not viewing channel
       where: sql.match<RemoteAppState>(
-        {
-          domain: ['!=', domain_id],
-          [`channels.${domain_id.split(':')[1]}`]: ['!=', channel_id],
-        },
+        domain_id
+          ? {
+              view: ['!=', 'main'],
+              domain: ['!=', domain_id],
+              [`channels.${domain_id.split(':')[1]}`]: ['!=', channel_id],
+            }
+          : {
+              view: ['!=', 'dm'],
+              private_channel: ['!=', channel_id],
+            },
         '||',
       ),
       set: {
-        [`pings.${channel_id.split(':')[1]}`]: ['+=', 1],
+        [`${
+          channel_id.startsWith('private_channels') ? 'private_pings' : 'pings'
+        }.${channel_id.split(':')[1]}`]: ['+=', 1],
       },
       return: ['id'],
     }),
   ];
 
   // Add member fetch from member
-  if (options.role_ids?.length) {
+  if (hasRoleMentions) {
     ops.splice(
       0,
       0,
@@ -90,7 +102,7 @@ export async function ping(
   // Apply pings to database
   console.log(sql.transaction(ops));
   const results = await query<{ id: string }[]>(sql.transaction(ops));
-  assert(results && results.length > 0);
+  assert(results);
   const profile_ids = results.map(
     (state) => `profiles:${state.id.split(':')[1]}`,
   );

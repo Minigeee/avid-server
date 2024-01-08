@@ -431,11 +431,10 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
         // Add date to overrides list
         sql.let(
           '$event',
-          sql.single(
             sql.update<CalendarEvent>(req.params.event_id, {
               set: { 'repeat.overrides': ['+=', req.body.date] },
+              single: true,
             }),
-          ),
         ),
       ];
 
@@ -445,8 +444,9 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
         ops.push(
           sql.let(
             '$newEvent',
-            sql.single(
-              sql.create<CalendarEvent>('calendar_events', {
+            sql.create<CalendarEvent>(
+              'calendar_events',
+              {
                 all_day: sql.$('$event.all_day'),
                 channel: sql.$('$event.channel'),
                 color: sql.$('$event.color'),
@@ -454,7 +454,8 @@ const routes: ApiRoutes<`${string} /calendar_events${string}`> = {
                 title: sql.$('$event.title'),
                 start: req.body.start,
                 end: req.body.end,
-              }),
+              },
+              { single: true },
             ),
           ),
         );

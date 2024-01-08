@@ -383,11 +383,10 @@ const routes: ApiRoutes<`${string} /tasks${string}`> = {
         sql.multi([
           sql.let(
             '$task',
-            sql.single(
-              sql.select<Task>(['*', 'board.domain AS _domain'], {
-                from: req.params.task_id,
-              }),
-            ),
+            sql.select<Task>(['*', 'board.domain AS _domain'], {
+              from: req.params.task_id,
+              single: true,
+            }),
           ),
           sql.select<Member>(MEMBER_SELECT_FIELDS, {
             from: `$task._domain<-member_of`,

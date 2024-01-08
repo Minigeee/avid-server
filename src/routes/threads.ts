@@ -3,13 +3,15 @@ import assert from 'assert';
 import { Thread } from '@app/types';
 
 import config from '../config';
-import { hasPermission, query, sql } from '../utility/query';
+import { hasPermission, isPrivateMember, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import {
   asArray,
+  asBool,
   asInt,
   asRecord,
   isArray,
+  isBool,
   isRecord,
   sanitizeHtml,
 } from '../utility/validate';
@@ -20,7 +22,10 @@ const routes: ApiRoutes<`${string} /threads${string}`> = {
       channel: {
         required: true,
         location: 'query',
-        transform: (value) => asRecord('channels', value),
+        transform: (value, req) =>
+          typeof req.query.private === 'string' && req.query.private === 'true'
+            ? asRecord('private_channels', value)
+            : asRecord('channels', value),
       },
       ids: {
         required: false,
@@ -40,10 +45,17 @@ const routes: ApiRoutes<`${string} /threads${string}`> = {
         location: 'query',
         transform: (value) => asInt(value, { min: 1 }),
       },
+      private: {
+        required: false,
+        location: 'query',
+        transform: asBool,
+      },
     },
     permissions: (req) => {
       const conds = [
-        hasPermission(req.token.profile_id, req.query.channel, 'can_view'),
+        req.query.private
+          ? isPrivateMember(req.token.profile_id, req.query.channel)
+          : hasPermission(req.token.profile_id, req.query.channel, 'can_view'),
       ];
       if (req.query.ids)
         conds.push(
@@ -93,16 +105,26 @@ const routes: ApiRoutes<`${string} /threads${string}`> = {
         required: true,
         location: 'body',
       },
+      private: {
+        required: false,
+        location: 'body',
+        transform: isBool,
+      },
     },
     permissions: (req) =>
       sql.return(
-        `${req.params.thread_id}.starters CONTAINS ${
-          req.token.profile_id
-        } || ${hasPermission(
-          req.token.profile_id,
-          `${req.params.thread_id}.channel`,
-          'can_manage',
-        )}`,
+        `${req.params.thread_id}.starters CONTAINS ${req.token.profile_id} || ${
+          req.body.private
+            ? isPrivateMember(
+                req.token.profile_id,
+                `${req.params.thread_id}.channel`,
+              )
+            : hasPermission(
+                req.token.profile_id,
+                `${req.params.thread_id}.channel`,
+                'can_manage',
+              )
+        }`,
       ),
     code: async (req, res) => {
       // Perform query

@@ -205,25 +205,37 @@ export type SqlMatchConditions<T> = {
 };
 
 /** Relate statement options */
+export type SqlCreateOptions<T extends object> = {
+  /** If only a single entry should be returned */
+  single?: boolean;
+  /** Return mode */
+  return?: SqlReturn | (Selectables<T> | (string & {}))[];
+};
+
+/** Relate statement options */
 export type SqlRelateOptions<T extends object> = {
   /** Extra content that should be stored in relate edge */
   content?: SqlContent<T>;
+  /** If only a single entry should be returned */
+  single?: boolean;
   /** Return mode (by default NONE) */
-  return?: SqlReturn | Selectables<T>[];
+  return?: SqlReturn | (Selectables<T> | (string & {}))[];
 };
 
 /** Update statement options */
 export type SqlDeleteOptions<T extends object> = {
   /** Update condition */
   where?: string;
+  /** If only a single entry should be returned */
+  single?: boolean;
   /** Return mode (by default NONE) */
-  return?: SqlReturn | Selectables<T>[];
+  return?: SqlReturn | (Selectables<T> | (string & {}))[];
 };
 
 /** Select statement options */
 export type SqlSelectOptions<T extends object> = {
   /** Record to select from */
-  from: string;
+  from: string | string[];
   /** Select condition */
   where?: string;
   /** Limit number of returned entries */
@@ -247,6 +259,8 @@ export type SqlSelectOptions<T extends object> = {
   group?: 'all' | (Selectables<T> | (string & {}))[];
   /** Should the single value be fetched */
   value?: boolean;
+  /** If only a single entry should be returned */
+  single?: boolean;
 };
 
 type _SqlUpdateBaseOptions<T extends object> = {
@@ -254,6 +268,8 @@ type _SqlUpdateBaseOptions<T extends object> = {
   where?: string;
   /** Return mode, AFTER by default */
   return?: SqlReturn | (Selectables<T> | (string & {}))[];
+  /** If only a single entry should be returned */
+  single?: boolean;
 };
 
 type _SqlUpdateContentOptions<T extends object> = {
@@ -304,8 +320,7 @@ function _json(x: any): string {
 
   if (type === 'string')
     return `"${x.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
-  else if (Array.isArray(x))
-    return `[${x.map((x) => _json(x)).join(',')}]`;
+  else if (Array.isArray(x)) return `[${x.map((x) => _json(x)).join(',')}]`;
   else if (type === 'object') {
     if (x === null) return 'null';
     else if (x.__esc__ !== undefined) return x.__esc__;
@@ -374,6 +389,7 @@ export const sql = {
     join: '&&' | '||' = '&&',
   ) =>
     Object.entries(conds)
+      .filter(([k, v]) => v !== undefined)
       .map(([k, v]) =>
         !Array.isArray(v) ? `${k}=${_json(v)}` : `${k} ${v[0]} ${_json(v[1])}`,
       )
@@ -389,10 +405,6 @@ export const sql = {
   /** Return statement */
   return: (expr: string) => `RETURN ${expr.trim()} `,
 
-  /** Select single element from array */
-  single: (expr: string, options?: { index?: number; append?: string }) =>
-    `(${expr.trim()})[${options?.index || 0}]${options?.append || ''} `,
-
   /** Wrap statement in parantheses */
   wrap: (expr: string, options?: { alias?: string; append?: string }) =>
     `(${expr.trim()})${
@@ -403,13 +415,20 @@ export const sql = {
   create: <T extends object>(
     record: string,
     content: SqlContent<T>,
-    ret?: SqlReturn | Selectables<T>[],
+    options?: SqlCreateOptions<T>,
   ) => {
     // Content string
     let json = _json(content);
 
-    let q = `CREATE ${record} CONTENT ${json} `;
-    if (ret) q += `RETURN ${typeof ret === 'string' ? ret : ret.join(',')} `;
+    let q = `CREATE ${
+      options?.single ? 'ONLY ' : ''
+    }${record} CONTENT ${json} `;
+    if (options?.return)
+      q += `RETURN ${
+        typeof options.return === 'string'
+          ? options.return
+          : options.return.join(',')
+      } `;
 
     return q;
   },
@@ -419,7 +438,9 @@ export const sql = {
     record: string | string[],
     options?: SqlDeleteOptions<T>,
   ) => {
-    let q = `DELETE ${typeof record === 'string' ? record : record.join(',')} `;
+    let q = `DELETE ${options?.single ? 'ONLY ' : ''}${
+      typeof record === 'string' ? record : record.join(',')
+    } `;
 
     if (options?.where) q += `WHERE ${options.where} `;
 
@@ -481,9 +502,9 @@ export const sql = {
     to: string,
     options?: SqlRelateOptions<T>,
   ) => {
-    let q = `RELATE ${from.includes('.') ? `(${from})` : from}->${edge}->${
-      to.includes('.') ? `(${to})` : to
-    } `;
+    let q = `RELATE ${options?.single ? 'ONLY ' : ''}${
+      from.includes('.') ? `(${from})` : from
+    }->${edge}->${to.includes('.') ? `(${to})` : to} `;
 
     // Content string
     if (options?.content) {
@@ -500,12 +521,16 @@ export const sql = {
 
   /** Select statement */
   select: <T extends object>(
-    fields: '*' | (Selectables<T> | (string & {}))[],
+    fields: '*' | (Selectables<T> | (string & {}) | undefined)[],
     options: SqlSelectOptions<T>,
   ) => {
     let q = `SELECT ${options.value ? 'VALUE ' : ''}${
-      typeof fields === 'string' ? '*' : fields.join(',')
-    } FROM ${options.from} `;
+      typeof fields === 'string'
+        ? '*'
+        : fields.filter((f) => f != undefined).join(',')
+    } FROM ${options?.single ? 'ONLY ' : ''}${
+      typeof options.from === 'string' ? options.from : options.from.join(',')
+    } `;
     if (options.where) q += `WHERE ${options.where} `;
 
     if (options.sort) {
@@ -537,7 +562,7 @@ export const sql = {
     records: string | string[],
     options: SqlUpdateOptions<T>,
   ) => {
-    let q = `UPDATE ${
+    let q = `UPDATE ${options?.single ? 'ONLY ' : ''}${
       typeof records === 'string' ? records : records.join(',')
     } `;
 
@@ -689,6 +714,26 @@ export function hasMemberPermission(
  */
 export function isMember(profile_id: string, domain_id: string) {
   return `fn::is_member(${domain_id}, ${profile_id}) `;
+}
+
+/**
+ * Checks if the profile is a member of a private channel
+ *
+ * @param profile_id The profile to check
+ * @param channel_id The private channel to check
+ */
+export function isPrivateMember(profile_id: string, channel_id: string) {
+  return `fn::is_private_member(${channel_id}, ${profile_id}) `;
+}
+
+/**
+ * Checks if the profile is an owner of a private channel
+ *
+ * @param profile_id The profile to check
+ * @param channel_id The private channel to check
+ */
+export function isPrivateOwner(profile_id: string, channel_id: string) {
+  return `fn::is_private_owner(${channel_id}, ${profile_id}) `;
 }
 
 /**

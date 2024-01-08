@@ -129,22 +129,20 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
         ops.push(
           sql.let(
             '$board',
-            sql.single(
-              sql.create<Board>(
-                'boards',
-                {
-                  domain: req.body.domain,
-                  inherit: req.body.group,
-                  prefix: opts.prefix,
-                  statuses: config.app.board.default_statuses,
-                  tags: [],
-                  collections: [config.app.board.backlog_collection],
+            sql.create<Board>(
+              'boards',
+              {
+                domain: req.body.domain,
+                inherit: req.body.group,
+                prefix: opts.prefix,
+                statuses: config.app.board.default_statuses,
+                tags: [],
+                collections: [config.app.board.backlog_collection],
 
-                  _task_counter: 0,
-                  _id_counter: 1,
-                },
-                ['id'],
-              ),
+                _task_counter: 0,
+                _id_counter: 1,
+              },
+              { single: true, return: ['id'] },
             ),
           ),
         );
@@ -161,8 +159,9 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
       ops.push(
         sql.let(
           '$channel',
-          sql.single(
-            sql.create<Channel>('channels', {
+          sql.create<Channel>(
+            'channels',
+            {
               domain: req.body.domain,
               inherit: req.body.group,
               name: req.body.name || 'new-channel',
@@ -170,7 +169,8 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
               data,
 
               _last_event: new Date().toISOString(),
-            }),
+            },
+            { single: true },
           ),
         ),
       );

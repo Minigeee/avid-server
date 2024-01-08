@@ -2,9 +2,9 @@ import assert from 'assert';
 
 import { Reaction } from '@app/types';
 import { emitBatchEvent } from '../utility/batcher';
-import { hasPermission, query, sql } from '../utility/query';
+import { hasPermission, isPrivateMember, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
-import { asRecord, isRecord } from '../utility/validate';
+import { asBool, asRecord, isBool, isRecord } from '../utility/validate';
 import { getChannel } from '../utility/db';
 import { io } from '../sockets';
 
@@ -20,14 +20,21 @@ const routes: ApiRoutes<`${string} /reactions${string}`> = {
         required: true,
         location: 'body',
       },
+      private: {
+        required: false,
+        location: 'body',
+        transform: isBool,
+      },
     },
     permissions: (req) =>
       sql.return(
-        hasPermission(
-          req.token.profile_id,
-          `${req.body.message}.channel`,
-          'can_send_reactions',
-        ),
+        req.body.private
+          ? isPrivateMember(req.token.profile_id, `${req.body.message}.channel`)
+          : hasPermission(
+              req.token.profile_id,
+              `${req.body.message}.channel`,
+              'can_send_reactions',
+            ),
       ),
     code: async (req, res) => {
       // Create reaction
@@ -77,19 +84,31 @@ const routes: ApiRoutes<`${string} /reactions${string}`> = {
         required: false,
         location: 'query',
       },
+      private: {
+        required: false,
+        location: 'query',
+        transform: asBool,
+      },
     },
-    permissions: (req) =>
-      sql.return(
-        `${
-          req.query.member
-            ? `${req.token.profile_id} == ${req.query.member} || `
-            : ''
-        }${hasPermission(
-          req.token.profile_id,
-          `${req.query.message}.channel`,
-          'can_manage_messages',
-        )}`,
-      ),
+    permissions: (req) => {
+      const conds = [];
+
+      // If removing reactions for member, must be a the person that sent the reactions, or...
+      if (req.query.member)
+        conds.push(`${req.token.profile_id} == ${req.query.member}`);
+
+      // If the channel is not private, must have permissions to manage message to remove other member's reactions
+      if (!req.query.private)
+        conds.push(
+          hasPermission(
+            req.token.profile_id,
+            `${req.query.message}.channel`,
+            'can_manage_messages',
+          ),
+        );
+
+      return sql.return(conds.join(' || '));
+    },
     code: async (req, res) => {
       // Delete conditions
       const conds: Record<string, string> = {};

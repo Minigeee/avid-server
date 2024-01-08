@@ -37,6 +37,7 @@ const routes: ApiRoutes<`${string} /app${string}`> = {
               recordKeys(v, 'channels'),
             ),
             pings: recordKeys(state.pings, 'channels'),
+            private_pings: recordKeys(state.pings, 'private_channels'),
             board_states: recordKeys(state.board_states, 'boards'),
           }
         : null;

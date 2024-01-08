@@ -6,13 +6,14 @@ import {
   ExpandedMember,
   Member,
   Message,
+  PrivateMember,
   RawMessage,
   Thread,
 } from '@app/types';
 
 import config from '../config';
 import { StatusError } from '../utility/error';
-import { SqlContent, hasPermission, query, sql } from '../utility/query';
+import { SqlContent, hasPermission, isPrivateMember, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import {
   asBool,
@@ -28,6 +29,7 @@ import { getChannel } from '../utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, omitBy } from 'lodash';
+import { PRIVATE_MEMBER_SELECT_FIELDS } from './private_channels';
 
 /** Finds all mentions in message */
 function findMentions(message: string) {
@@ -67,7 +69,10 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
       channel: {
         required: true,
         location: 'query',
-        transform: (value) => asRecord('channels', value),
+        transform: (value, req) =>
+          typeof req.query.private === 'string' && req.query.private === 'true'
+            ? asRecord('private_channels', value)
+            : asRecord('channels', value),
       },
       thread: {
         required: false,
@@ -89,10 +94,17 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
         location: 'query',
         transform: (value) => asInt(value, { min: 1 }),
       },
+      private: {
+        required: false,
+        location: 'query',
+        transform: asBool,
+      },
     },
     permissions: (req) =>
       sql.return(
-        hasPermission(req.token.profile_id, req.query.channel, 'can_view'),
+        req.query.private
+          ? isPrivateMember(req.token.profile_id, req.query.channel)
+          : hasPermission(req.token.profile_id, req.query.channel, 'can_view'),
       ),
     code: async (req, res) => {
       const limit = Math.min(
@@ -154,11 +166,15 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
               group: ['emoji', 'message'],
             },
           ),
-          // List of members
-          sql.select<Member>(MEMBER_SELECT_FIELDS, {
-            from: `${req.query.channel}.domain<-member_of`,
-            where: sql.match({ in: ['IN', sql.$('$senders')] }),
-          }),
+          // List of members (depends on if channel is private dm)
+          req.query.private
+            ? sql.select<PrivateMember>(PRIVATE_MEMBER_SELECT_FIELDS, {
+                from: `${req.query.channel}<-private_member_of`,
+              })
+            : sql.select<Member>(MEMBER_SELECT_FIELDS, {
+                from: `${req.query.channel}.domain<-member_of`,
+                where: sql.match({ in: ['IN', sql.$('$senders')] }),
+              }),
           // List of threads
           sql.select<Thread>('*', {
             from: 'threads',
@@ -222,7 +238,7 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
       channel: {
         required: true,
         location: 'body',
-        transform: (value) => isRecord(value, 'channels'),
+        transform: (value) => isRecord(value, ['channels', 'private_channels']),
       },
       message: {
         required: true,
@@ -245,11 +261,13 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
     },
     permissions: (req) =>
       sql.return(
-        hasPermission(
-          req.token.profile_id,
-          req.body.channel,
-          'can_send_messages',
-        ),
+        req.body.channel.startsWith('private_channels')
+          ? isPrivateMember(req.token.profile_id, req.body.channel)
+          : hasPermission(
+              req.token.profile_id,
+              req.body.channel,
+              'can_send_messages',
+            ),
       ),
     code: async (req, res) => {
       // Analyze message for pings
@@ -266,7 +284,10 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
           // Get message being replied to
           sql.let(
             '$reply_to',
-            sql.single(sql.select<Message>('*', { from: req.body.reply_to })),
+            sql.select<Message>('*', {
+              from: req.body.reply_to,
+              single: true,
+            }),
           ),
           // Get thread id
           sql.let(
@@ -277,14 +298,16 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
                 body: '$reply_to.thread',
               },
               {
-                body: sql.single(
-                  sql.create<Thread>('threads', {
+                body: sql.create<Thread>(
+                  'threads',
+                  {
                     channel: req.body.channel,
                     name: sql.$('string::slice($reply_to.message, 0, 64)'),
                     starters: sql.$(
                       `[${req.token.profile_id}, $reply_to.sender]`,
                     ),
-                  }),
+                  },
+                  { single: true },
                 ),
               },
             ),
@@ -356,21 +379,34 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
 
       // Broadcast message
       const sender_id = req.token.profile_id;
-      emitChannelEvent(
-        req.body.channel,
-        async (room, channel) => {
-          // Emit
-          room.emit('chat:message', rawMessage);
+      if (!req.body.channel.startsWith('private_channels')) {
+        // Normal channel
+        emitChannelEvent(
+          req.body.channel,
+          async (room, channel) => {
+            // Emit
+            room.emit('chat:message', rawMessage);
 
-          // Send ping
-          await ping(channel.domain, channel.id, {
-            member_ids: Array.from(mentions.members),
-            role_ids: Array.from(mentions.roles),
-            sender_id,
-          });
-        },
-        { profile_id: req.token.profile_id },
-      );
+            // Send ping
+            await ping(channel.domain, channel.id, {
+              member_ids: Array.from(mentions.members),
+              role_ids: Array.from(mentions.roles),
+              sender_id,
+            });
+          },
+          { profile_id: req.token.profile_id },
+        );
+      } else {
+        // Private channel, emit event normally
+        const socket = getClientSocketOrIo(req.token.profile_id);
+        socket.to(req.body.channel).emit('chat:message', rawMessage);
+
+        // Send ping
+        await ping(undefined, req.body.channel, {
+          member_ids: Array.from(mentions.members),
+          sender_id,
+        });
+      }
 
       return rawMessage;
     },
@@ -392,6 +428,11 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
         location: 'body',
         transform: isBool,
       },
+      private: {
+        required: false,
+        location: 'body',
+        transform: isBool,
+      },
     },
     // Only sender can edit their own message
     permissions: (req) => {
@@ -403,11 +444,16 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
         );
       if (req.body.pinned !== undefined)
         conds.push(
-          hasPermission(
-            req.token.profile_id,
-            `${req.params.message_id}.channel`,
-            'can_manage_messages',
-          ),
+          req.body.private
+            ? isPrivateMember(
+                req.token.profile_id,
+                `${req.params.message_id}.channel`,
+              )
+            : hasPermission(
+                req.token.profile_id,
+                `${req.params.message_id}.channel`,
+                'can_manage_messages',
+              ),
         );
 
       // Error if no changes
@@ -460,18 +506,26 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
         const message = results[0];
         const { message_id } = req.params;
 
-        emitChannelEvent(
-          message.channel,
-          (room) => {
-            room.emit(
-              'chat:edit-message',
-              message.channel,
-              message_id,
-              message,
-            );
-          },
-          { profile_id: req.token.profile_id, is_event: false },
-        );
+        if (!req.body.private) {
+          emitChannelEvent(
+            message.channel,
+            (room) => {
+              room.emit(
+                'chat:edit-message',
+                message.channel,
+                message_id,
+                message,
+              );
+            },
+            { profile_id: req.token.profile_id, is_event: false },
+          );
+        } else {
+          // Private channel, emit event normally
+          const socket = getClientSocketOrIo(req.token.profile_id);
+          socket
+            .to(message.channel)
+            .emit('chat:edit-message', message.channel, message_id, message);
+        }
       }
 
       return { message: results[0].message };
@@ -485,17 +539,27 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
         location: 'params',
         transform: (value) => asRecord('messages', value),
       },
+      private: {
+        required: false,
+        location: 'query',
+        transform: asBool,
+      },
     },
     // Can delete message if it is sender's message, or if user has permission to delete messages
     permissions: (req) =>
       sql.return(
-        `${req.params.message_id}.sender == ${
-          req.token.profile_id
-        } || ${hasPermission(
-          req.token.profile_id,
-          `${req.params.message_id}.channel`,
-          'can_manage_messages',
-        )}`,
+        `${req.params.message_id}.sender == ${req.token.profile_id} || ${
+          req.query.private
+            ? isPrivateMember(
+                req.token.profile_id,
+                `${req.params.message_id}.channel`,
+              )
+            : hasPermission(
+                req.token.profile_id,
+                `${req.params.message_id}.channel`,
+                'can_manage_messages',
+              )
+        }`,
       ),
     code: async (req, res) => {
       const results = await query<Message[]>(
@@ -509,13 +573,21 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
         const channel_id = results[0].channel;
         const { message_id } = req.params;
 
-        emitChannelEvent(
-          channel_id,
-          (room) => {
-            room.emit('chat:delete-message', channel_id, message_id);
-          },
-          { profile_id: req.token.profile_id, is_event: false },
-        );
+        if (!req.query.private) {
+          emitChannelEvent(
+            channel_id,
+            (room) => {
+              room.emit('chat:delete-message', channel_id, message_id);
+            },
+            { profile_id: req.token.profile_id, is_event: false },
+          );
+        } else {
+          // Private channel, emit event normally
+          const socket = getClientSocketOrIo(req.token.profile_id);
+          socket
+            .to(channel_id)
+            .emit('chat:delete-message', channel_id, message_id);
+        }
       }
     },
   },

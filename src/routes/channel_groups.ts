@@ -74,12 +74,14 @@ const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
       const ops = [
         sql.let(
           '$group',
-          sql.single(
-            sql.create<ChannelGroup>('channel_groups', {
+          sql.create<ChannelGroup>(
+            'channel_groups',
+            {
               domain: req.body.domain,
               name: req.body.name,
               channels: [],
-            }),
+            },
+            { single: true },
           ),
         ),
         sql.return('$group'),

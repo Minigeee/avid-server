@@ -19,6 +19,7 @@ import {
   ClientToServerEvents,
   DeepPartial,
   Member,
+  PrivateChannel,
   Profile,
   RemoteAppState,
   ServerToClientEvents,
@@ -26,7 +27,7 @@ import {
 
 import { addChatHandlers } from './handlers/chat';
 import { addRtcHandlers } from './handlers/rtc';
-import { isBool, isRecord } from './utility/validate';
+import { isBool, isIn, isRecord } from './utility/validate';
 
 import assert from 'assert';
 import { pick } from 'lodash';
@@ -111,7 +112,6 @@ export async function getUserInfo(profile_id: string) {
       ? ({
           ...state,
           channels: _recordKeys(state.channels, 'domains') || {},
-          expansions: _recordKeys(state.expansions, 'domains') || {},
           last_accessed:
             _recordKeys(state.last_accessed, 'domains', (x) =>
               _recordKeys(x, 'channels'),
@@ -156,9 +156,10 @@ export async function makeSocketServer(server: HttpServer) {
       socket,
       domains,
       app: app || {
+        view: 'main',
         domain: null,
         channels: {},
-        expansions: {},
+        private_channel: null,
         last_accessed: {},
         pings: {},
       },
@@ -176,6 +177,10 @@ export async function makeSocketServer(server: HttpServer) {
 
     // Dc prev socket
     if (hasPrevSocket) _clients[profile_id].socket.disconnect();
+
+    ////////////////////////////////
+    // Retrieve domains and channels
+    ////////////////////////////////
 
     // Create map of time each channel last had an event
     const currentChannels = client.current_domain
@@ -208,11 +213,22 @@ export async function makeSocketServer(server: HttpServer) {
     // Join domain for domain specific updates (i.e. user join/leave)
     if (client.current_domain) socket.join(client.current_domain);
 
+    ////////////////////////////////
+    // Retrieve private channels
+    ////////////////////////////////
+    const privChannelIds = await query<string[]>(
+      sql.select(['out'], {
+        from: `${profile_id}->private_member_of`,
+        value: true,
+      }),
+    );
+    if (privChannelIds) socket.join(privChannelIds);
+
     // Mark profile as online
     query(sql.update<Profile>(profile_id, { set: { online: true } }));
 
     // Notify in every domain the user is in that they joined
-    socket.to(Object.keys(domains)).emit('general:user-joined', profile_id);
+    socket.to(Object.keys(domains).concat(privChannelIds || [])).emit('general:user-joined', profile_id);
 
     // Called when the socket disconnects for any reason
     socket.on(
@@ -303,6 +319,11 @@ export async function makeSocketServer(server: HttpServer) {
               cond: '$allowed = true',
               body: sql.update<RemoteAppState>(state_id, {
                 patch: [
+                  {
+                    op: 'add',
+                    path: 'view',
+                    value: 'main',
+                  },
                   {
                     op: 'add',
                     path: 'domain',
@@ -407,6 +428,15 @@ export async function makeSocketServer(server: HttpServer) {
       'general:update-app-state',
       wrapper.event(async (state: DeepPartial<RemoteAppState>) => {
         // Validation/transform
+        if (state.view)
+          state.view = isIn<RemoteAppState['view']>(state.view, ['main', 'dm']);
+
+        if (state.private_channel !== undefined)
+          state.private_channel =
+            state.private_channel === null
+              ? null
+              : isRecord(state.private_channel, 'private_channels');
+
         if (state.last_accessed) {
           state.last_accessed = transformObject(state.last_accessed, (k, v) => [
             id(k),
@@ -417,8 +447,21 @@ export async function makeSocketServer(server: HttpServer) {
         if (state.pings)
           state.pings = transformObject(state.pings, (k, v) => [id(k), v]);
 
+        if (state.private_pings)
+          state.private_pings = transformObject(state.private_pings, (k, v) => [
+            id(k),
+            v,
+          ]);
+
         if (state.right_panel_opened)
           state.right_panel_opened = isBool(state.right_panel_opened);
+
+        if (state.private_channel_states) {
+          state.private_channel_states = transformObject(
+            state.private_channel_states,
+            (k, v) => [id(k), v],
+          );
+        }
 
         if (state.chat_states) {
           state.chat_states = transformObject(state.chat_states, (k, v) => [
@@ -436,9 +479,13 @@ export async function makeSocketServer(server: HttpServer) {
 
         // Pick only needed states
         state = pick(state, [
+          'view',
+          'private_channel',
           'last_accessed',
           'pings',
+          'private_pings',
           'right_panel_opened',
+          'private_channel_states',
           'chat_states',
           'board_states',
         ]);

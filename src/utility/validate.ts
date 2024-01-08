@@ -120,8 +120,8 @@ export function isIn<T>(value: any, values: T[]) {
 }
 
 ////////////////////////////////////////////////////////////
-export function isRecord(str: any, table: string) {
-  if (typeof str !== 'string' || !str.startsWith(table + ':'))
+export function isRecord(str: any, table: string | string[]) {
+  if (typeof str !== 'string' || (typeof table === 'string' ? !str.startsWith(table + ':') : table.findIndex(t => str.startsWith(t + ':')) < 0))
     throw new Error(`must be an id in the form "${table}:[id]"`);
   return str;
 }

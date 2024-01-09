@@ -22,6 +22,7 @@ import { ApiRoutes } from '../utility/routes';
 import { asRecord, isIn, isRecord } from '../utility/validate';
 
 import { pick } from 'lodash';
+import { getClientSocketOrIo } from '../sockets';
 
 const routes: ApiRoutes<`${string} /channels${string}`> = {
   'GET /channels': {
@@ -189,12 +190,16 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
       ops.push(sql.return('$channel'));
 
       // Perform query
-      const results = await query<Channel>(sql.transaction(ops), {
+      const result = await query<Channel>(sql.transaction(ops), {
         log: req.log,
       });
-      assert(results);
+      assert(result);
 
-      return results;
+      // Emit change
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket.to(result.domain).emit('general:domain-update', result.domain, false);
+
+      return result;
     },
   },
 
@@ -464,7 +469,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
         ops.push(
           sql.update<Channel>(req.params.channel_id, {
             set: { name: req.body.name },
-            return: ['name'],
+            return: ['name', 'domain'],
           }),
         );
       }
@@ -474,6 +479,12 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
         log: req.log,
       });
       assert(results);
+
+      // Emit change
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket
+        .to(results[0].domain)
+        .emit('general:domain-update', results[0].domain, false);
 
       return updateChannel ? results[0] : null;
     },
@@ -496,7 +507,18 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
         ),
       ),
     code: async (req, res) => {
-      await query(sql.delete(req.params.channel_id), { log: req.log });
+      const result = await query<Channel>(
+        sql.delete<Channel>(req.params.channel_id, {
+          return: 'BEFORE',
+          single: true,
+        }),
+        { log: req.log },
+      );
+      assert(result);
+
+      // Emit change
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket.to(result.domain).emit('general:domain-update', result.domain, true);
     },
   },
 };

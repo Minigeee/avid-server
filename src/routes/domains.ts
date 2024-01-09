@@ -23,6 +23,7 @@ import {
 } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asRecord, isArray, isRecord } from '../utility/validate';
+import { DEFAULT_GROUP_PERMISSIONS } from './channel_groups';
 
 ////////////////////////////////////////////////////////////
 const TEMPLATES = {
@@ -55,14 +56,7 @@ const TEMPLATES = {
       domain: sql.$('$domain.id'),
       resource: sql.$('$group.id'),
       role: sql.$('$role.id'),
-      permissions: [
-        'can_view',
-        'can_send_messages',
-        'can_send_attachments',
-        'can_send_reactions',
-        'can_broadcast_audio',
-        'can_broadcast_video',
-      ],
+      permissions: DEFAULT_GROUP_PERMISSIONS,
     }),
     sql.let('$groups', `array::append($groups, $group.id)`),
   ],

@@ -1,6 +1,6 @@
 import assert from 'assert';
 
-import { AclEntry, ChannelGroup, Domain } from '@app/types';
+import { AclEntry, AllPermissions, ChannelGroup, Domain } from '@app/types';
 
 import {
   getMember,
@@ -13,6 +13,17 @@ import {
 } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asRecord, isRecord } from '../utility/validate';
+import { getClientSocketOrIo } from '../sockets';
+
+/** Default permissions for a new group for everyone */
+export const DEFAULT_GROUP_PERMISSIONS = [
+  'can_view',
+  'can_send_messages',
+  'can_send_attachments',
+  'can_manage_extensions',
+  'can_broadcast_audio',
+  'can_broadcast_video',
+] as AllPermissions[];
 
 const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
   'GET /channel_groups': {
@@ -96,13 +107,7 @@ const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
             domain: req.body.domain,
             resource: sql.$('$group.id'),
             role: sql.$(`${req.body.domain}._default_role`),
-            permissions: [
-              'can_view',
-              'can_send_messages',
-              'can_send_attachments',
-              'can_broadcast_audio',
-              'can_broadcast_video',
-            ],
+            permissions: DEFAULT_GROUP_PERMISSIONS,
           }),
         );
       }
@@ -112,6 +117,10 @@ const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
         log: req.log,
       });
       assert(results);
+
+      // Emit change
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket.to(results.domain).emit('general:domain-update', results.domain, false);
 
       return results;
     },
@@ -215,6 +224,14 @@ const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
       });
       assert(results);
 
+      // Emit change
+      if (groupUpdate && results.length > 0) {
+        const socket = getClientSocketOrIo(req.token.profile_id);
+        socket
+          .to(results[0].domain)
+          .emit('general:domain-update', results[0].domain, false);
+      }
+
       return groupUpdate ? results[0] : null;
     },
   },
@@ -236,7 +253,18 @@ const routes: ApiRoutes<`${string} /channel_groups${string}`> = {
         ),
       ),
     code: async (req, res) => {
-      await query(sql.delete(req.params.group_id), { log: req.log });
+      const result = await query<ChannelGroup>(
+        sql.delete<ChannelGroup>(req.params.group_id, {
+          return: 'BEFORE',
+          single: true,
+        }),
+        { log: req.log },
+      );
+      assert(result);
+
+      // Emit change
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket.to(result.domain).emit('general:domain-update', result.domain, true);
     },
   },
 };

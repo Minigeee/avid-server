@@ -14,6 +14,7 @@ import { ApiRoutes } from '../utility/routes';
 import { asRecord, isArray, isRecord } from '../utility/validate';
 
 import { StatusError } from '../utility/error';
+import { getClientSocketOrIo } from '../sockets';
 
 const routes: ApiRoutes<`${string} /permissions${string}`> = {
   'GET /permissions': {
@@ -227,6 +228,10 @@ const routes: ApiRoutes<`${string} /permissions${string}`> = {
           (results.length === req.body.permissions.length ||
             results.length === req.body.permissions.length + 1),
       );
+      
+      // Emit change
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket.to(req.body.domain).emit('general:domain-update', req.body.domain, true);
 
       return {
         updated: updateIndices

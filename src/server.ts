@@ -83,6 +83,7 @@ async function makeExpressServer() {
     ...require('./routes/roles').default,
     ...require('./routes/tasks').default,
     ...require('./routes/threads').default,
+    ...require('./routes/wikis').default,
   });
 
   // Error handler

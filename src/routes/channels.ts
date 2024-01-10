@@ -6,6 +6,7 @@ import {
   ChannelGroup,
   ChannelOptions,
   ChannelTypes,
+  Wiki,
 } from '@app/types';
 
 import config from '../config';
@@ -74,7 +75,7 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
         required: true,
         location: 'body',
         transform: (value) =>
-          isIn<ChannelTypes>(value, ['text', 'rtc', 'board', 'calendar']),
+          isIn<ChannelTypes>(value, ['text', 'rtc', 'board', 'calendar', 'wiki']),
       },
       data: {
         required: false,
@@ -183,6 +184,13 @@ const routes: ApiRoutes<`${string} /channels${string}`> = {
             set: { channel: sql.$('$channel.id') },
             return: 'NONE',
           }),
+        );
+      } else if (type === 'wiki') {
+        ops.push(
+          sql.create<Wiki>(
+            `type::thing("wikis", string::split(type::string($channel.id), ":")[1])`,
+            { content: '' },
+          ),
         );
       }
 

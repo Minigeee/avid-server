@@ -22,12 +22,14 @@ export type ApiRequest<Path extends ApiPath> = Request<
   any,
   ApiSchema[Path] extends { body: any } ? ApiSchema[Path]['body'] : {},
   ApiSchema[Path] extends { query: any } ? ApiSchema[Path]['query'] : {}
->;
+> &
+  (ApiSchema[Path] extends { req: any } ? ApiSchema[Path]['req'] : {});
 
 /** Request handler for a certain api path */
 export type ApiRequestHandler<Path extends ApiPath> = (
   req: ApiRequest<Path>,
   res: Response,
+  next: NextFunction,
 ) => Promise<void> | void;
 
 /** Helper function for transform map */
@@ -39,7 +41,7 @@ type _Validate<T, Loc extends string, Path extends ApiPath> = {
     location: Loc;
     /** The trnasformer function that validates data and returns the option's useable form. If the data is not valid, an error should be thrown with the error message */
     transform?: (value: any, req: ApiRequest<Path>) => Exclude<T[K], undefined>;
-  };
+  } | null;
 };
 
 /** Route definition for a single route */
@@ -73,6 +75,8 @@ export type ApiRouteDefinition<Path extends ApiPath = ApiPath> = {
     before: 'transforms' | 'permissions' | 'end';
     /** The middleware handler */
     handler: ApiRequestHandler<Path>;
+    /** Specify if a wrapper should be used (default true) */
+    wrapper?: boolean;
   }[];
 };
 
@@ -101,7 +105,13 @@ function createHandlers(def: ApiRouteDefinition<'GET /messages'>) {
 
   // Pre-validators
   if (preTransforms?.length)
-    handlers.push(...preTransforms.map((x) => wrapper.api(x.handler as any)));
+    handlers.push(
+      ...preTransforms.map((x) =>
+        x.wrapper === false
+          ? (x.handler as any)
+          : wrapper.api(x.handler as any),
+      ),
+    );
 
   // Validators
   handlers.push((req, res, next) => {
@@ -110,9 +120,12 @@ function createHandlers(def: ApiRouteDefinition<'GET /messages'>) {
 
     // Validate all options
     for (const [name, opts] of Object.entries(def.validate)) {
+      // Skip if no validators
+      if (!opts) continue;
+
       // Get value
       const value = req[opts.location][name];
-      if (!value) {
+      if (value === undefined) {
         if (opts.required)
           errors.push({ name, opts, msg: 'is a required parameter' });
 
@@ -140,7 +153,13 @@ function createHandlers(def: ApiRouteDefinition<'GET /messages'>) {
 
   // Pre-permissions
   if (prePermissions?.length)
-    handlers.push(...prePermissions.map((x) => wrapper.api(x.handler as any)));
+    handlers.push(
+      ...prePermissions.map((x) =>
+        x.wrapper === false
+          ? (x.handler as any)
+          : wrapper.api(x.handler as any),
+      ),
+    );
 
   // Permissions
   if (def.permissions) {
@@ -164,7 +183,13 @@ function createHandlers(def: ApiRouteDefinition<'GET /messages'>) {
 
   // Pre-end
   if (preEnd?.length)
-    handlers.push(...preEnd.map((x) => wrapper.api(x.handler as any)));
+    handlers.push(
+      ...preEnd.map((x) =>
+        x.wrapper === false
+          ? (x.handler as any)
+          : wrapper.api(x.handler as any),
+      ),
+    );
 
   // End
   handlers.push(

@@ -14,22 +14,25 @@ export type IsArrayOpts = { minlen?: number; maxlen?: number };
 ////////////////////////////////////////////////////////////
 export function sanitizeHtml(value: string) {
   return _sanitizeHtml(value, {
-    allowedTags: [..._sanitizeHtml.defaults.allowedTags, 'img'],
+    allowedTags: [..._sanitizeHtml.defaults.allowedTags, 'img', 'iframe'],
     allowedAttributes: {
       ..._sanitizeHtml.defaults.allowedAttributes,
       '*': ['style'],
+      div: ['data-youtube-video'],
+      iframe: ['src'],
     },
     allowedClasses: {
       code: ['language-*'],
       '*': ['avid*', 'hljs*'],
     },
+    allowedIframeHostnames: ['www.youtube.com'],
   } as _sanitizeHtml.IOptions);
 }
 
 ////////////////////////////////////////////////////////////
 type SchemaField<T, K extends keyof T> = {
   required: undefined extends T[K] ? false : true;
-  transform: (value: any) => T[K];
+  transform?: (value: any) => T[K];
 };
 export function isObject<T>(
   value: any,
@@ -56,8 +59,25 @@ export function isObject<T>(
     // Check if the field is present
     if (v.required && value[k] === undefined)
       throw new Error(`\`${k}\` is a required field`);
+    // Check wildcard
+    else if (k === '*' && v.transform) {
+      let i = 0;
+      for (const [field, objValue] of Object.entries(value)) {
+        // Limit number of fields
+        if (i > 1000) break;
+
+        // Do check
+        try {
+          result[field] = v.transform(objValue);
+        } catch (err: any) {
+          throw new Error(`\`${field}\` ${err.message}`);
+        }
+
+        ++i;
+      }
+    }
     // Check if it is present
-    else if (value[k] !== undefined) {
+    else if (value[k] !== undefined && v.transform) {
       // Do check
       try {
         result[k] = v.transform(value[k]);
@@ -147,6 +167,12 @@ export function asBool(str: string) {
 export function isBool(value: any) {
   if (typeof value !== 'boolean') throw new Error('must be a boolean');
   return value as boolean;
+}
+
+////////////////////////////////////////////////////////////
+export function isString(value: any) {
+  if (typeof value !== 'string') throw new Error('must be a string');
+  return value as string;
 }
 
 ////////////////////////////////////////////////////////////

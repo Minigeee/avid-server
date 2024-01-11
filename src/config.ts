@@ -70,6 +70,32 @@ const config = {
       threads: 30,
     },
   },
+  
+  /** Digital Ocean Spaces config */
+  spaces: {
+    /** The spaces endpoint */
+    endpoint: 'https://nyc3.digitaloceanspaces.com',
+    /** The spaces bucket */
+    bucket: 'avid-spaces',
+  },
+
+  /** Upload configs */
+  upload: {
+    /** Profile picture config */
+    profile_picture: {
+      /** Image size */
+      image_size: { w: 256, h: 256 },
+      /** Max size (in bytes) */
+      max_size: 1 * 1024 ** 2,
+    },
+    /** Attachment config */
+    attachment: {
+      /** Max attachment size in bytes */
+      max_size: 10 * 1024 ** 2,
+      /** Max number of upload items */
+      max_number: 10,
+    },
+  },
 
   /** App config */
   app: {

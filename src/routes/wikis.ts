@@ -1,10 +1,10 @@
 import assert from 'assert';
 
-import { Reaction, Wiki } from '@app/types';
+import { Attachment, AttachmentType, ExpandedWiki, Reaction, Wiki } from '@app/types';
 import { emitBatchEvent } from '../utility/batcher';
 import { hasPermission, isPrivateMember, query, sql } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
-import { asBool, asRecord, isBool, isRecord, sanitizeHtml } from '../utility/validate';
+import { asBool, asRecord, isArray, isBool, isIn, isInt, isObject, isRecord, isString, sanitizeHtml } from '../utility/validate';
 import { getChannel } from '../utility/db';
 import { io } from '../sockets';
 
@@ -35,15 +35,21 @@ const routes: ApiRoutes<`${string} /wikis${string}`> = {
     },
     code: async (req, res) => {
       // Get wiki
-      const result = await query<Wiki>(
+      const result = await query<ExpandedWiki>(
         sql.select<Wiki>(
-          ['id', 'content', req.query.draft ? 'draft' : undefined],
+          [
+            'id',
+            'content',
+            req.query.draft ? 'draft' : undefined,
+            'attachments',
+          ],
           {
             from: req.params.wiki_id,
             single: true,
+            fetch: ['attachments'],
           },
         ),
-        { log: req.log }
+        { log: req.log },
       );
       assert(result);
 
@@ -68,6 +74,11 @@ const routes: ApiRoutes<`${string} /wikis${string}`> = {
         location: 'body',
         transform: sanitizeHtml,
       },
+      attachments: {
+        required: false,
+        location: 'body',
+        transform: (value) => isArray(value, (value) => isRecord(value, 'attachments')),
+      },
     },
     permissions: (req) =>
       sql.return(
@@ -83,10 +94,12 @@ const routes: ApiRoutes<`${string} /wikis${string}`> = {
           set: {
             content: req.body.content,
             draft: req.body.content ? null : req.body.draft,
+            attachments: req.body.attachments ? sql.$(`array::group([$value || [], ${req.body.attachments}])`) : undefined,
           },
           single: true,
+          return: ['id', 'content', 'draft']
         }),
-        { log: req.log }
+        { log: req.log },
       );
       assert(result);
 

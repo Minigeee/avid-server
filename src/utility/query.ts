@@ -457,20 +457,6 @@ export const sql = {
     values: SqlContent<T>[],
     options?: SqlInsertOptions<T>,
   ) => {
-    // Get keys
-    const keySet = new Set<string>();
-    for (const obj of values) {
-      for (const k of Object.keys(obj)) keySet.add(k);
-    }
-    const keys = Array.from(keySet);
-
-    // Construct value strings
-    const strs: string[] = [];
-    for (const obj of values)
-      strs.push(
-        `(${keys.map((k) => _json(obj[k as keyof SqlContent<T>])).join(',')})`,
-      );
-
     // Construct on conflict string
     let onConflict = '';
     if (options?.on_conflict) {
@@ -490,9 +476,7 @@ export const sql = {
     }
 
     // Put parts togther
-    return `INSERT INTO ${table} (${keys.join(',')}) VALUES ${strs.join(
-      ',',
-    )} ${onConflict}`;
+    return `INSERT INTO ${table} ${_json(values)} ${onConflict}`;
   },
 
   /** Relate statement */
@@ -573,13 +557,11 @@ export const sql = {
       for (const [k, v] of Object.entries(
         (options as _SqlUpdateSetOptions<T>).set,
       )) {
-        if (v === undefined) continue;
+        const customOp =
+          Array.isArray(v) && (v[0] === '=' || v[0] === '+=' || v[0] === '-=');
+        if (v === undefined || (customOp && v[1] === undefined)) continue;
 
-        exprs.push(
-          Array.isArray(v) && (v[0] === '=' || v[0] === '+=' || v[0] === '-=')
-            ? `${k}${v[0]}${_json(v[1])}`
-            : `${k}=${_json(v)}`,
-        );
+        exprs.push(customOp ? `${k}${v[0]}${_json(v[1])}` : `${k}=${_json(v)}`);
       }
       const set = exprs.join(',');
 

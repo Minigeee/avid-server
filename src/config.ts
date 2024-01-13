@@ -88,6 +88,13 @@ const config = {
       /** Max size (in bytes) */
       max_size: 1 * 1024 ** 2,
     },
+    /** Profile banner config */
+    profile_banner: {
+      /** Image size */
+      image_size: { w: 880, h: 320 },
+      /** Max size (in bytes) */
+      max_size: 5 * 1024 ** 2,
+    },
     /** Attachment config */
     attachment: {
       /** Max attachment size in bytes */

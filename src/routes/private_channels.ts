@@ -36,6 +36,7 @@ export const PRIVATE_MEMBER_SELECT_FIELDS = [
   'time_joined',
   'in.username AS alias',
   'in.profile_picture AS profile_picture',
+  'in.banner AS banner',
   'in.online AS online',
 ];
 

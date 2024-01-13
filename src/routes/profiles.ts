@@ -28,6 +28,8 @@ import {
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, pick, omitBy } from 'lodash';
+import { uid } from 'uid';
+import { config as spacesConfig, getImageKey, getImageUrl, s3, upload } from '../utility/spaces';
 
 const routes: ApiRoutes<`${string} /profiles${string}`> = {
   'GET /profiles': {
@@ -111,6 +113,168 @@ const routes: ApiRoutes<`${string} /profiles${string}`> = {
             new Date(b.time_created).getTime(),
         ),
       };
+    },
+  },
+
+  'POST /profiles/:profile_id/icon': {
+    validate: {
+      file: null,
+      profile_id: {
+        required: true,
+        location: 'params',
+        transform: (value) => asRecord('profiles', value),
+      },
+    },
+    permissions: (req) =>
+      sql.return(`${req.params.profile_id} == ${req.token.profile_id}`),
+    middleware: [
+      {
+        before: 'end',
+        wrapper: false,
+        handler: (req, res, next) =>
+          upload(
+            (_, file) => {
+              // Generate key
+              const id = uid();
+              const profile_id = req.params.profile_id as string;
+              const ext = file.originalname.split('.').at(-1);
+              const key = `${spacesConfig.img_path}profiles/${profile_id}/${id}.${ext}`;
+
+              // Set image url
+              req.image_url = getImageUrl(key);
+
+              return key;
+            },
+            { fileSize: config.upload.profile_picture.max_size },
+          ).single('image')(req, res, next),
+      },
+    ],
+    code: async (req, res) => {
+      // Update profile
+      const results = await query<Profile>(
+        sql.update<Profile>(req.params.profile_id, {
+          content: { profile_picture: req.image_url },
+          return: 'BEFORE',
+          single: true,
+        }),
+        { log: req.log },
+      );
+      assert(results);
+
+      // Delete old image
+      if (results.profile_picture)
+        s3.delete(getImageKey(results.profile_picture));
+
+      // Return new url
+      return { profile_picture: req.image_url };
+    },
+  },
+
+  'DELETE /profiles/:profile_id/icon': {
+    validate: {
+      profile_id: {
+        required: true,
+        location: 'params',
+        transform: (value) => asRecord('profiles', value),
+      },
+    },
+    permissions: (req) =>
+      sql.return(`${req.params.profile_id} == ${req.token.profile_id}`),
+    code: async (req, res) => {
+      // Delete pfp
+      const results = await query<Profile>(
+        sql.update<Profile>(req.params.profile_id, {
+          content: { profile_picture: null },
+          return: 'BEFORE',
+          single: true,
+        }),
+      );
+      assert(results);
+  
+      // Delete old image
+      if (results.profile_picture)
+        s3.delete(getImageKey(results.profile_picture));
+    },
+  },
+
+  'POST /profiles/:profile_id/banner': {
+    validate: {
+      file: null,
+      profile_id: {
+        required: true,
+        location: 'params',
+        transform: (value) => asRecord('profiles', value),
+      },
+    },
+    permissions: (req) =>
+      sql.return(`${req.params.profile_id} == ${req.token.profile_id}`),
+    middleware: [
+      {
+        before: 'end',
+        wrapper: false,
+        handler: (req, res, next) =>
+          upload(
+            (_, file) => {
+              // Generate key
+              const id = uid();
+              const profile_id = req.params.profile_id as string;
+              const ext = file.originalname.split('.').at(-1);
+              const key = `${spacesConfig.img_path}profiles/${profile_id}/b-${id}.${ext}`;
+
+              // Set image url
+              req.image_url = getImageUrl(key);
+
+              return key;
+            },
+            { fileSize: config.upload.profile_banner.max_size },
+          ).single('image')(req, res, next),
+      },
+    ],
+    code: async (req, res) => {
+      // Update profile
+      const results = await query<Profile>(
+        sql.update<Profile>(req.params.profile_id, {
+          content: { banner: req.image_url },
+          return: 'BEFORE',
+          single: true,
+        }),
+        { log: req.log },
+      );
+      assert(results);
+
+      // Delete old image
+      if (results.banner)
+        s3.delete(getImageKey(results.banner));
+
+      // Return new url
+      return { banner: req.image_url };
+    },
+  },
+
+  'DELETE /profiles/:profile_id/banner': {
+    validate: {
+      profile_id: {
+        required: true,
+        location: 'params',
+        transform: (value) => asRecord('profiles', value),
+      },
+    },
+    permissions: (req) =>
+      sql.return(`${req.params.profile_id} == ${req.token.profile_id}`),
+    code: async (req, res) => {
+      // Delete pfp
+      const results = await query<Profile>(
+        sql.update<Profile>(req.params.profile_id, {
+          content: { banner: null },
+          return: 'BEFORE',
+          single: true,
+        }),
+      );
+      assert(results);
+  
+      // Delete old image
+      if (results.banner)
+        s3.delete(getImageKey(results.banner));
     },
   },
 };

@@ -32,18 +32,30 @@ import bodyParser from 'body-parser';
 
 // WIP : Make routes
 const routes: ApiRoutes<`${string} /attachments${string}`> = {
-  'POST /attachments/:domain_id': {
+  'POST /attachments/:container_id': {
     validate: {
-      domain_id: {
+      container_id: {
         required: true,
         location: 'params',
-        transform: (value) => asRecord('domains', value),
+        transform: (value, req) =>
+          typeof req.query.private === 'string' && req.query.private === 'true'
+            ? asRecord('private_channels', value)
+            : asRecord('domains', value),
+      },
+      private: {
+        required: false,
+        location: 'query',
+        transform: asBool,
       },
       files: null,
       attachments: null,
     },
     permissions: (req) =>
-      sql.return(isMember(req.token.profile_id, req.params.domain_id)),
+      sql.return(
+        req.query.private
+          ? isPrivateMember(req.token.profile_id, req.params.container_id)
+          : isMember(req.token.profile_id, req.params.container_id),
+      ),
     middleware: [
       {
         before: 'end',
@@ -55,9 +67,9 @@ const routes: ApiRoutes<`${string} /attachments${string}`> = {
 
               // Generate key
               const prefix = isImage ? spacesConfig.img_path : '';
-              const domain_id = id(req.params.domain_id);
+              const container_id = (req.query.private ? 'dm_' : '') + id(req.params.container_id);
               const profile_id = req.token.profile_id;
-              const key = `${prefix}attachments/${domain_id}/${id(
+              const key = `${prefix}attachments/${container_id}/${id(
                 profile_id,
               )}/${file.originalname}`;
 
@@ -68,7 +80,7 @@ const routes: ApiRoutes<`${string} /attachments${string}`> = {
               return key;
             },
             { fileSize: config.upload.attachment.max_size },
-          ).array('files', config.upload.attachment.max_number)(req, res, next),
+          ).array('files', config.upload.attachment.max_number)(req as any, res, next),
       },
       {
         before: 'end',
@@ -87,7 +99,8 @@ const routes: ApiRoutes<`${string} /attachments${string}`> = {
               },
               type: {
                 required: true,
-                transform: (value) => isIn<AttachmentType>(value, ['file', 'image']),
+                transform: (value) =>
+                  isIn<AttachmentType>(value, ['file', 'image']),
               },
               width: {
                 required: false,
@@ -98,9 +111,11 @@ const routes: ApiRoutes<`${string} /attachments${string}`> = {
 
           // Make sure same number of files and attachments
           if (req.files?.length !== req.body.attachments.length)
-            throw new Error('"form.files" and "form.attachments" must have the same number of elements');
+            throw new Error(
+              '"form.files" and "form.attachments" must have the same number of elements',
+            );
         },
-      }
+      },
     ],
     code: async (req, res) => {
       // List of urls

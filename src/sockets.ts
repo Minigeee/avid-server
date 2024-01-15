@@ -161,6 +161,7 @@ export async function makeSocketServer(server: HttpServer) {
         channels: {},
         private_channel: null,
         last_accessed: {},
+        private_last_accessed: {},
         pings: {},
       },
 
@@ -443,6 +444,12 @@ export async function makeSocketServer(server: HttpServer) {
             transformObject(v, (k, v) => [id(k), isBool(v)]),
           ]);
         }
+        
+        if (state.private_last_accessed)
+          state.private_last_accessed = transformObject(
+            state.private_last_accessed,
+            (k, v) => [id(k), v],
+          );
 
         if (state.pings)
           state.pings = transformObject(state.pings, (k, v) => [id(k), v]);
@@ -482,6 +489,7 @@ export async function makeSocketServer(server: HttpServer) {
           'view',
           'private_channel',
           'last_accessed',
+          'private_last_accessed',
           'pings',
           'private_pings',
           'right_panel_opened',
@@ -602,5 +610,41 @@ export async function emitChannelEvent(
 
     // Make all clients leave the inactive channel room
     _socketServer.socketsLeave(_inactive(channel_id));
+  }
+}
+
+
+/**
+ * Emit an event as a private channel event. This event will be
+ * broadcasted to all members of the private channel, regardless of
+ * whether the user has seen the latest activity from the channel or not.
+ * Then it will update the time of the latest channel activity.
+ *
+ * @param channel_id The private channel the event is being broadcasted to
+ * @param emitter The function used to emit the full event
+ * @param options Emit options
+ */
+export async function emitPrivateChannelEvent(
+  channel_id: string,
+  emitter: (
+    room: ReturnType<Socket['to']>,
+  ) => void | Promise<void>,
+  options?: ChannelEmitOptions,
+) {
+  // Get socket to emit
+  const socket = getClientSocketOrIo(options?.profile_id);
+
+  // Emit the activity event to inactive channel
+  // Emit the event to active channel
+  await emitter(socket.to(channel_id));
+
+  // Code to update latest event tracker
+  if (options?.is_event !== false) {
+    /// Update latest event time
+    query(
+      sql.update<PrivateChannel>(channel_id, {
+        set: { _last_event: sql.$('time::now()') },
+      }),
+    );
   }
 }

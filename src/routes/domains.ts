@@ -264,7 +264,7 @@ const routes: ApiRoutes<`${string} /domains${string}`> = {
         transform: (value) => asRecord('domains', value),
       },
       name: {
-        required: false,
+        required: true,
         location: 'body',
       },
     },

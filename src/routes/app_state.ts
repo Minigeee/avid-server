@@ -32,12 +32,14 @@ const routes: ApiRoutes<`${string} /app${string}`> = {
         ? {
             ...state,
             channels: recordKeys(state.channels, 'domains'),
-            expansions: recordKeys(state.expansions, 'domains'),
-            seen: recordKeys(state.seen, 'domains', (v) =>
+            last_accessed: recordKeys(state.last_accessed, 'domains', (v) =>
               recordKeys(v, 'channels'),
             ),
+            private_last_accessed: recordKeys(state.private_last_accessed, 'private_channels'),
             pings: recordKeys(state.pings, 'channels'),
-            private_pings: recordKeys(state.pings, 'private_channels'),
+            private_pings: recordKeys(state.private_pings, 'private_channels'),
+            private_channel_states: recordKeys(state.private_channel_states, 'private_channels'),
+            chat_states: recordKeys(state.chat_states, 'channels'),
             board_states: recordKeys(state.board_states, 'boards'),
           }
         : null;

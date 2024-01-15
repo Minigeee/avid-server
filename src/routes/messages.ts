@@ -13,7 +13,13 @@ import {
 
 import config from '../config';
 import { StatusError } from '../utility/error';
-import { SqlContent, hasPermission, isPrivateMember, query, sql } from '../utility/query';
+import {
+  SqlContent,
+  hasPermission,
+  isPrivateMember,
+  query,
+  sql,
+} from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import {
   asBool,
@@ -23,7 +29,11 @@ import {
   isRecord,
   sanitizeHtml,
 } from '../utility/validate';
-import { emitChannelEvent, getClientSocketOrIo } from '../sockets';
+import {
+  emitChannelEvent,
+  emitPrivateChannelEvent,
+  getClientSocketOrIo,
+} from '../sockets';
 import { ping } from '../utility/ping';
 import { getChannel } from '../utility/db';
 import { MEMBER_SELECT_FIELDS } from './members';
@@ -397,15 +407,22 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
           { profile_id: req.token.profile_id },
         );
       } else {
-        // Private channel, emit event normally
-        const socket = getClientSocketOrIo(req.token.profile_id);
-        socket.to(req.body.channel).emit('chat:message', rawMessage);
+        // Private channel
+        const channel_id = req.body.channel;
+        emitPrivateChannelEvent(
+          channel_id,
+          async (room) => {
+            // Emit
+            room.emit('chat:message', rawMessage);
 
-        // Send ping
-        await ping(undefined, req.body.channel, {
-          member_ids: Array.from(mentions.members),
-          sender_id,
-        });
+            // Send ping
+            await ping(undefined, channel_id, {
+              member_ids: Array.from(mentions.members),
+              sender_id,
+            });
+          },
+          { profile_id: req.token.profile_id },
+        );
       }
 
       return rawMessage;
@@ -520,11 +537,20 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
             { profile_id: req.token.profile_id, is_event: false },
           );
         } else {
-          // Private channel, emit event normally
-          const socket = getClientSocketOrIo(req.token.profile_id);
-          socket
-            .to(message.channel)
-            .emit('chat:edit-message', message.channel, message_id, message);
+          // Private channel
+          emitPrivateChannelEvent(
+            message.channel,
+            async (room) => {
+              // Emit
+              room.emit(
+                'chat:edit-message',
+                message.channel,
+                message_id,
+                message,
+              );
+            },
+            { profile_id: req.token.profile_id, is_event: false },
+          );
         }
       }
 
@@ -582,11 +608,14 @@ const routes: ApiRoutes<`${string} /messages${string}`> = {
             { profile_id: req.token.profile_id, is_event: false },
           );
         } else {
-          // Private channel, emit event normally
-          const socket = getClientSocketOrIo(req.token.profile_id);
-          socket
-            .to(channel_id)
-            .emit('chat:delete-message', channel_id, message_id);
+          // Private channel
+          emitPrivateChannelEvent(
+            channel_id,
+            (room) => {
+              room.emit('chat:delete-message', channel_id, message_id);
+            },
+            { profile_id: req.token.profile_id, is_event: false },
+          );
         }
       }
     },

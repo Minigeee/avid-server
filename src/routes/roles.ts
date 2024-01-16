@@ -15,6 +15,7 @@ import { asRecord, isArray, isRecord } from '../utility/validate';
 import { MEMBER_SELECT_FIELDS } from './members';
 
 import { isNil, omitBy } from 'lodash';
+import { getClientSocketOrIo } from '../sockets';
 
 const routes: ApiRoutes<`${string} /roles${string}`> = {
   'GET /roles': {
@@ -351,17 +352,25 @@ const routes: ApiRoutes<`${string} /roles${string}`> = {
       ),
     code: async (req, res) => {
       // Remove role
-      const results = await query<Member[]>(
-        sql.update<Member>(`(${req.params.role_id}.domain<-member_of)`, {
-          where: sql.match({ in: req.params.member_id }),
-          set: { roles: ['-=', req.params.role_id] },
-          return: ['roles'],
-        }),
-        { log: req.log },
+      const results = await query<[Member[], string]>(
+        sql.multi([
+          sql.update<Member>(`(${req.params.role_id}.domain<-member_of)`, {
+            where: sql.match({ in: req.params.member_id }),
+            set: { roles: ['-=', req.params.role_id] },
+            return: ['roles'],
+          }),
+          sql.return(`${req.params.role_id}.domain`),
+        ]),
+        { complete: true, log: req.log },
       );
       assert(results && results.length > 0);
+      const [members, domain_id] = results;
 
-      return results[0].roles || [];
+      // Emit change (don't want members accessing things they don't have permissions for)
+      const socket = getClientSocketOrIo(req.token.profile_id);
+      socket.to(domain_id).emit('general:domain-update', domain_id, true);
+
+      return members[0].roles || [];
     },
   },
 };

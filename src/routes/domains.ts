@@ -23,44 +23,7 @@ import {
 } from '../utility/query';
 import { ApiRoutes } from '../utility/routes';
 import { asRecord, isArray, isRecord } from '../utility/validate';
-import { DEFAULT_GROUP_PERMISSIONS } from './channel_groups';
-
-////////////////////////////////////////////////////////////
-const TEMPLATES = {
-  default: () => [
-    sql.let('$groups', '[]'),
-    sql.let(
-      '$group',
-        sql.create<ChannelGroup>('channel_groups', {
-          domain: sql.$('$domain.id'),
-          name: 'Main',
-          channels: sql.$('[]'),
-        }, { single: true }),
-    ),
-    sql.update<ChannelGroup>('($group.id)', {
-      set: {
-        channels: sql.$(
-          sql.wrap(
-            sql.create<Channel>('channels', {
-              domain: sql.$('$domain.id'),
-              inherit: sql.$('$group.id'),
-              name: 'general',
-              type: 'text',
-            }),
-            { append: '.id' },
-          ),
-        ),
-      },
-    }),
-    sql.create<AclEntry>('acl', {
-      domain: sql.$('$domain.id'),
-      resource: sql.$('$group.id'),
-      role: sql.$('$role.id'),
-      permissions: DEFAULT_GROUP_PERMISSIONS,
-    }),
-    sql.let('$groups', `array::append($groups, $group.id)`),
-  ],
-};
+import { TEMPLATES } from '../utility/templates';
 
 const routes: ApiRoutes<`${string} /domains${string}`> = {
   'POST /domains': {
